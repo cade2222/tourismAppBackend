@@ -10,8 +10,9 @@ def create_app() -> Flask:
     app.before_request(db.connect)
     app.after_request(db.disconnect)
 
-    from . import auth, event
+    from . import auth, event, location
     app.register_blueprint(auth.bp)
     app.register_blueprint(event.bp)
+    app.register_blueprint(location.bp)
 
     return app
