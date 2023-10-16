@@ -1,6 +1,9 @@
-from flask import request, g
-import psycopg2
+from flask import request, g, Blueprint, Response
+import psycopg
 
+bp = Blueprint("db", __name__)
+
+@bp.before_app_request
 def connect() -> None:
     """
     Connect to the database and add the handle to the app context's globals.
@@ -18,12 +21,14 @@ def connect() -> None:
         file.close()
     
     try:
-        g.conn = psycopg2.connect(connstr)
-    except psycopg2.Error as e:
+        g.conn = psycopg.connect(connstr)
+    except psycopg.Error as e:
         raise RuntimeError(e.pgerror)
 
-def disconnect() -> None:
+@bp.after_app_request
+def disconnect(response: Response) -> Response:
     """
     Close the database connection stored in the app context.
     """
     g.conn.close()
+    return response
