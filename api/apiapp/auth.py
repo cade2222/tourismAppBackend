@@ -41,9 +41,43 @@ def send_www_authenticate(error) -> Response:
     return Response("Incorrect login supplied.", 401, {"WWW-Authenticate": "Basic realm=\"Login Required\""})
 
 
+def validate_registration(username: str, password: str, email: str, displayname: str | None = None, **kwargs):
+    errors = []
+    if re.compile(r"^([a-z0-9\-]){1,31}$", re.IGNORECASE).match(username) is None:
+        errors.append({"field": "username", "description": "Username must be at most 31 characters and contain only alphanumeric characters and dashes."})
+    if re.compile(r"^(?=.*\d)(?=.*[A-Z])(?=.*[a-z])(?=.*[^0-9A-z])[ -~]{8,}$").match(password) is None:
+        errors.append({"field": "password", "description": "Password must be at least 8 characters, contain only ASCII characters, and contain at least one uppercase letter, lowercase letter, number, and special character."})
+    if re.compile(r"^(?!.{256,})[ -?A-~]+@[A-z0-9]([A-z0-9\-]*[A-z0-9])?(\.[A-z0-9]([A-z0-9\-]*[A-z0-9]))*$").match(email) is None:
+        errors.append({"field": "email", "description": "Email is either too long or not valid."})
+    if displayname is not None and len(displayname) > 63:
+        errors.append({"field": "displayname", "description": "Display name cannot be more than 63 characters."})
+    
+    return errors
+
+def create_user(username: str, password: str, email: str, displayname: str | None = None, **kwargs):
+    errors = []
+    passwordhash = generate_password_hash(password)
+
+    assert isinstance(g.conn, psycopg.Connection)
+
+    with g.conn.cursor() as cur:
+        cur.execute("SELECT id FROM users WHERE username = %s;", (username.lower(),))
+        if cur.rowcount != 0:
+            errors.append({"field": "username", "description": "Username is already taken."})
+        cur.execute("SELECT id FROM users WHERE email = %s;", (email.lower(),))
+        if cur.rowcount != 0:
+            errors.append({"field": "email", "description": "Email is already taken."})
+    
+    with g.conn.cursor() as cur:
+        cur.execute("INSERT INTO users(username, password, email) VALUES (%s, %s, %s);", (username, passwordhash, email))
+        if displayname is not None and len(displayname) != 0:
+            cur.execute("UPDATE users SET displayname = %s WHERE username = %s;", (kwargs["displayname"], username))
+    g.conn.commit()
+
+    return errors
 
 @bp.route("/register", methods=["POST"])
-def create_account():
+def register():
     """
     Registers a new user into the database.
 
@@ -69,13 +103,16 @@ def create_account():
     
     The following requirements are in place for the inputs:
         - `username` must contain no more than 31 characters.
-        - `username` must contain only alphanumeric characters and hyphens ('-')
-        - `password` must contain at least 8 characters, all ASCII
-        - `password` must contain at least one uppercase letter, one lowercase letter, one digit, and one special character
-        - `email` can be no more than 255 characters and must be in valid email address form
+        - `username` must contain only alphanumeric characters and hyphens ('-').
+        - `password` must contain at least 8 characters, all ASCII.
+        - `password` must contain at least one uppercase letter, one lowercase letter, one digit, and one special character.
+        - `email` can be no more than 255 characters and must be in valid email address form.
+        - `displayname` must contain no more than 63 characters.
     """
     if request.json is None:
         abort(415)
+    if not isinstance(request.json, dict):
+        abort(422)
     username = request.json.get("username")
     password = request.json.get("password")
     email = request.json.get("email")
@@ -84,39 +121,11 @@ def create_account():
         abort(422)
     if not isinstance(username, str) or not isinstance(password, str) or not isinstance(email, str) or (displayname is not None and not isinstance(displayname, str)):
         abort(422)
-    errors = []
-    if re.compile(r"^([a-z0-9\-]){1,31}$", re.IGNORECASE).match(username) is None:
-        errors.append({"field": "username", "description": "Username must be at most 31 characters and contain only alphanumeric characters and dashes."})
-    if re.compile(r"^(?=.*\d)(?=.*[A-Z])(?=.*[a-z])(?=.*[^0-9A-z])[ -~]{8,}$").match(password) is None:
-        errors.append({"field": "password", "description": "Password must be at least 8 characters, contain only ASCII characters, and contain at least one uppercase letter, lowercase letter, number, and special character."})
-    if re.compile(r"^(?!.{256,})[ -?A-~]+@[A-z0-9]([A-z0-9\-]*[A-z0-9])?(\.[A-z0-9]([A-z0-9\-]*[A-z0-9]))*$").match(email) is None:
-        errors.append({"field": "email", "description": "Email is either too long or not valid."})
     
-    if len(errors) != 0:
-        return errors
-    
-    passwordhash = generate_password_hash(password)
-
-    assert isinstance(g.conn, psycopg.Connection)
-
-    with g.conn.cursor() as cur:
-        cur.execute("SELECT id FROM users WHERE username = %s;", (username.lower(),))
-        if cur.rowcount != 0:
-            errors.append({"field": "username", "description": "Username is already taken."})
-        cur.execute("SELECT id FROM users WHERE email = %s;", (email.lower(),))
-        if cur.rowcount != 0:
-            errors.append({"field": "email", "description": "Email is already taken."})
-    if len(errors) != 0:
-        return errors
-    
-    with g.conn.cursor() as cur:
-        cur.execute("INSERT INTO users(username, password, email) VALUES (%s, %s, %s);", (username, passwordhash, email))
-        if (displayname is not None and len(displayname) != 0):
-            cur.execute("UPDATE users WHERE username = %s SET displayname = %s;", (username, displayname))
-    g.conn.commit()
-
-    return []
-
+    errors = validate_registration(**request.json)
+    if len(errors) == 0:
+        errors = create_user(**request.json)
+    return errors
 
 @bp.route("/login", methods=["GET"])
 @authenticate
