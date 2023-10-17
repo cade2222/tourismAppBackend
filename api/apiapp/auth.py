@@ -3,7 +3,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.exceptions import Unauthorized
 import psycopg
 import re
-import sys
 
 bp = Blueprint("auth", __name__, url_prefix="/auth")
 
