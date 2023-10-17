@@ -140,13 +140,12 @@ def register() -> Response:
         abort(415)
     if not isinstance(request.json, dict):
         abort(422)
-    username = request.json.get("username")
-    password = request.json.get("password")
-    email = request.json.get("email")
     displayname = request.json.get("displayname")
-    if username is None or password is None or email is None:
+    if "username" not in request.json or "password" not in request.json or "email" not in request.json:
         abort(422)
-    if not isinstance(username, str) or not isinstance(password, str) or not isinstance(email, str) or (displayname is not None and not isinstance(displayname, str)):
+    if not isinstance(request.json["username"], str) or not isinstance(request.json["password"], str) \
+        or not isinstance(request.json["email"], str) \
+        or ("displayname" in request.json and not isinstance(request.json["displayname"], str)):
         abort(422)
     
     errors = validate_registration(**request.json)
