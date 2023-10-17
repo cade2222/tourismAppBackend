@@ -140,7 +140,6 @@ def register() -> Response:
         abort(415)
     if not isinstance(request.json, dict):
         abort(422)
-    displayname = request.json.get("displayname")
     if "username" not in request.json or "password" not in request.json or "email" not in request.json:
         abort(422)
     if not isinstance(request.json["username"], str) or not isinstance(request.json["password"], str) \
@@ -196,8 +195,10 @@ def verify(**kwargs) -> Response:
         - 422 if the input did not contain the required fields
         - 200 otherwise (even if the verification failed; see JSON output for actual result)
     """
-    if request.json is None or not isinstance(request.json, dict):
+    if request.json is None:
         abort(415)
+    if not isinstance(request.json, dict):
+        abort(422)
     if "email" not in request.json or not isinstance(request.json["email"], str):
         abort(422)
     return {"success": verify_email(**kwargs, **request.json)}
