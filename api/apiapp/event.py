@@ -19,7 +19,6 @@ def create_event(displayname: str, description: str | None = None, **kwargs) -> 
     with g.conn.cursor() as cur:
         cur.execute("INSERT INTO events(displayname, description, host) VALUES (%s, %s);", 
                     (displayname, description if description is not None else "", g.userid))
-    g.conn.commit()
 
 @bp.route("/create")
 @authenticate

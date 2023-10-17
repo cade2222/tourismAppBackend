@@ -21,7 +21,7 @@ def connect() -> None:
         file.close()
     
     try:
-        g.conn = psycopg.connect(connstr)
+        g.conn = psycopg.connect(connstr, autocommit=True)
     except psycopg.Error as e:
         raise RuntimeError(e.pgerror)
 

@@ -93,7 +93,6 @@ def create_user(username: str, password: str, email: str, displayname: str | Non
         cur.execute("INSERT INTO users(username, password, email) VALUES (%s, %s, %s);", (username.lower(), passwordhash, email.lower()))
         if displayname is not None and len(displayname) != 0:
             cur.execute("UPDATE users SET displayname = %s WHERE username = %s;", (kwargs["displayname"], username))
-    g.conn.commit()
 
 
 def send_verification_email(username: str, email: str, **kwargs) -> None:
@@ -176,7 +175,6 @@ def verify_email(code: int, email: str, **kwargs) -> bool:
     with g.conn.cursor() as cur:
         cur.execute("UPDATE users SET verification = NULL WHERE email = %s AND verification = %s;", (email.lower(), code))
         retval = cur.rowcount != 0
-    g.conn.commit()
     return retval
 
 @bp.route("/verify/<int:code>", methods=["PUT"])
