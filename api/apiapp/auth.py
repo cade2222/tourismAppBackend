@@ -32,7 +32,6 @@ def authenticate(func):
         return func(*args, **kwargs)
     return inner
 
-
 @bp.app_errorhandler(Unauthorized)
 def send_www_authenticate(error) -> Response:
     """
@@ -42,6 +41,11 @@ def send_www_authenticate(error) -> Response:
 
 
 def validate_registration(username: str, password: str, email: str, displayname: str | None = None, **kwargs):
+    """
+    Ensures the validation requirements for the registration info are met (see docstring for `register()`).
+    
+    Returns an error list if not (see docstring for `register()`).
+    """
     errors = []
     if re.compile(r"^([a-z0-9\-]){1,31}$", re.IGNORECASE).match(username) is None:
         errors.append({"field": "username", "description": "Username must be at most 31 characters and contain only alphanumeric characters and dashes."})
@@ -55,6 +59,11 @@ def validate_registration(username: str, password: str, email: str, displayname:
     return errors
 
 def create_user(username: str, password: str, email: str, displayname: str | None = None, **kwargs):
+    """
+    Adds a user with the given name, password, and email address (and, optionally, display name) to the database.
+
+    Returns sn error list on failure (see docstring for `register()`).
+    """
     errors = []
     passwordhash = generate_password_hash(password)
 
@@ -126,6 +135,7 @@ def register():
     if len(errors) == 0:
         errors = create_user(**request.json)
     return errors
+
 
 @bp.route("/login", methods=["GET"])
 @authenticate
