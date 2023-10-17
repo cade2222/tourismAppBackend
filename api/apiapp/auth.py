@@ -40,7 +40,7 @@ def send_www_authenticate(error) -> Response:
     return Response("Incorrect login supplied.", 401, {"WWW-Authenticate": "Basic realm=\"Login Required\""})
 
 
-def validate_registration(username: str, password: str, email: str, displayname: str | None = None, **kwargs):
+def validate_registration(username: str, password: str, email: str, displayname: str | None = None, **kwargs) -> list:
     """
     Ensures the validation requirements for the registration info are met (see docstring for `register()`).
     
@@ -58,17 +58,15 @@ def validate_registration(username: str, password: str, email: str, displayname:
     
     return errors
 
-def create_user(username: str, password: str, email: str, displayname: str | None = None, **kwargs):
+def check_conflicts(username: str, email: str, **kwargs) -> list:
     """
-    Adds a user with the given name, password, and email address (and, optionally, display name) to the database.
+    Makes sure no other user with the given username and email exist in the database.
 
-    Returns sn error list on failure (see docstring for `register()`).
+    Returns an error list on failure (see docstring for `register()`).
     """
     errors = []
-    passwordhash = generate_password_hash(password)
 
     assert isinstance(g.conn, psycopg.Connection)
-
     with g.conn.cursor() as cur:
         cur.execute("SELECT id FROM users WHERE username = %s;", (username.lower(),))
         if cur.rowcount != 0:
@@ -77,16 +75,36 @@ def create_user(username: str, password: str, email: str, displayname: str | Non
         if cur.rowcount != 0:
             errors.append({"field": "email", "description": "Email is already taken."})
     
+    return errors
+
+
+def create_user(username: str, password: str, email: str, displayname: str | None = None, **kwargs) -> None:
+    """
+    Adds a user with the given name, password, and email address (and, optionally, display name) to the database.
+
+    Returns an error list on failure (see docstring for `register()`).
+    """
+    errors = []
+
+    passwordhash = generate_password_hash(password)
+
+    assert isinstance(g.conn, psycopg.Connection)
     with g.conn.cursor() as cur:
-        cur.execute("INSERT INTO users(username, password, email) VALUES (%s, %s, %s);", (username, passwordhash, email))
+        cur.execute("INSERT INTO users(username, password, email) VALUES (%s, %s, %s);", (username.lower(), passwordhash, email.lower()))
         if displayname is not None and len(displayname) != 0:
             cur.execute("UPDATE users SET displayname = %s WHERE username = %s;", (kwargs["displayname"], username))
     g.conn.commit()
 
-    return errors
+
+def send_verification_email(username: str, email: str, **kwargs) -> None:
+    """
+    Sends a verification email to the given email.
+    """
+    pass
+
 
 @bp.route("/register", methods=["POST"])
-def register():
+def register() -> Response:
     """
     Registers a new user into the database.
 
@@ -133,14 +151,54 @@ def register():
     
     errors = validate_registration(**request.json)
     if len(errors) == 0:
-        errors = create_user(**request.json)
+        errors = check_conflicts(**request.json)
+    if len(errors) == 0:
+        create_user(**request.json)
+        send_verification_email(**request.json)
     return errors
 
 
 @bp.route("/login", methods=["GET"])
 @authenticate
-def login():
+def login() -> Response:
     """
     Returns a 200 status code if the given HTTP authorization is valid, or 401 if not.
     """
     return "Success"
+
+
+def verify_email(code: int, email: str, **kwargs) -> bool:
+    """
+    Verifies the given email with the given code.
+
+    Returns True on success, False on failure.
+    """
+    retval = False
+    assert isinstance(g.conn, psycopg.Connection)
+    with g.conn.cursor() as cur:
+        cur.execute("UPDATE users SET verification = NULL WHERE email = %s AND verification = %d;", (email.lower(), code))
+        retval = cur.rowcount != 0
+    g.conn.commit()
+    return retval
+
+@bp.route("/verify/<int:code>", methods=["PUT"])
+def verify(**kwargs) -> Response:
+    """
+    Verifies the given email.
+
+    Input: a JSON object in the following format:
+        - `email`: the email to verify
+
+    Output: a JSON array in the following format:
+        - `success`: true if verification was successful, false otherwise
+    
+    Status Codes:
+        - 415 if the type was not JSON
+        - 422 if the input did not contain the required fields
+        - 200 otherwise (even if the verification failed; see JSON output for actual result)
+    """
+    if request.json is None or not isinstance(request.json, dict):
+        abort(415)
+    if "email" not in request.json or not isinstance(request.json["email"], str):
+        abort(422)
+    return {"success": verify_email(**kwargs, **request.json)}
