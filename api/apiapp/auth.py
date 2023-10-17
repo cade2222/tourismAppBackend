@@ -180,7 +180,7 @@ def verify_email(code: int, email: str, **kwargs) -> bool:
     return retval
 
 @bp.route("/verify/<int:code>", methods=["PUT"])
-def verify(**kwargs) -> Response:
+def verify(code: int) -> Response:
     """
     Verifies the given email.
 
@@ -201,4 +201,6 @@ def verify(**kwargs) -> Response:
         abort(422)
     if "email" not in request.json or not isinstance(request.json["email"], str):
         abort(422)
-    return {"success": verify_email(**kwargs, **request.json)}
+    if "code" in request.json:
+        abort(422)
+    return {"success": verify_email(code=code, **request.json)}
