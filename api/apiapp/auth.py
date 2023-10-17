@@ -176,7 +176,7 @@ def verify_email(code: int, email: str, **kwargs) -> bool:
     retval = False
     assert isinstance(g.conn, psycopg.Connection)
     with g.conn.cursor() as cur:
-        cur.execute("UPDATE users SET verification = NULL WHERE email = %s AND verification = %d;", (email.lower(), code))
+        cur.execute("UPDATE users SET verification = NULL WHERE email = %s AND verification = %s;", (email.lower(), code))
         retval = cur.rowcount != 0
     g.conn.commit()
     return retval
