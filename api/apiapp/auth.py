@@ -92,7 +92,7 @@ def create_user(username: str, password: str, email: str, displayname: str | Non
     with g.conn.cursor() as cur:
         cur.execute("INSERT INTO users(username, password, email) VALUES (%s, %s, %s);", (username.lower(), passwordhash, email.lower()))
         if displayname is not None and len(displayname) != 0:
-            cur.execute("UPDATE users SET displayname = %s WHERE username = %s;", (kwargs["displayname"], username))
+            cur.execute("UPDATE users SET displayname = %s WHERE username = %s;", (displayname, username))
 
 
 def send_verification_email(username: str, email: str, **kwargs) -> None:
