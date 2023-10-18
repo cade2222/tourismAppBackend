@@ -1,5 +1,27 @@
 from flask import request, g, Blueprint, Response
 import psycopg
+import psycopg.adapt
+import re
+from .location import Point
+import sys
+
+class PointDumper(psycopg.adapt.Dumper):
+    oid = psycopg.adapters.types["point"].oid
+
+    def dump(self, obj: Point) -> bytes:
+        print(obj, file=sys.stderr)
+        return ("(%s, %s)" % (obj.lat, obj.lon)).encode()
+
+class PointLoader(psycopg.adapt.Loader):
+    def load(self, data: bytes) -> Point:
+        m = re.match(r"\(([^)]+),([^)])\)", data.decode())
+        try:
+            if m is not None:
+                return Point(float(m.group(1)), float(m.group(2)))
+            else:
+                raise ValueError()
+        except:
+            raise psycopg.InterfaceError("Incorrect Point representation")
 
 bp = Blueprint("db", __name__)
 
@@ -22,6 +44,8 @@ def connect() -> None:
     
     try:
         g.conn = psycopg.connect(connstr, autocommit=True)
+        g.conn.adapters.register_dumper(Point, PointDumper)
+        g.conn.adapters.register_loader("point", PointLoader)
     except psycopg.Error as e:
         raise RuntimeError(e.pgerror)
 
