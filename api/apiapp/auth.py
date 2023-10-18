@@ -155,13 +155,29 @@ def register() -> Response:
     return errors
 
 
+def is_verified() -> bool:
+    """
+    Determines if the logged-in user has a verified email.
+
+    Returns true if the account is verified, false otherwise.
+    """
+    assert isinstance(g.conn, psycopg.Connection)
+    assert isinstance(g.userid, int)
+    verified = False
+    with g.conn.cursor() as cur:
+        cur.execute("SELECT id FROM users WHERE id = %s AND verification IS NULL;", (g.userid,))
+        verified = cur.rowcount != 0
+    return verified
+
 @bp.route("/login", methods=["GET"])
 @authenticate
 def login() -> Response:
     """
     Returns a 200 status code if the given HTTP authorization is valid, or 401 if not.
+    Response body is a JSON object with one field:
+        - `verified`: true if the user account is verified, false otherwise.
     """
-    return "Success"
+    return {"verified": is_verified()}
 
 
 def verify_email(code: int, email: str, **kwargs) -> bool:
@@ -170,12 +186,12 @@ def verify_email(code: int, email: str, **kwargs) -> bool:
 
     Returns True on success, False on failure.
     """
-    retval = False
+    success = False
     assert isinstance(g.conn, psycopg.Connection)
     with g.conn.cursor() as cur:
         cur.execute("UPDATE users SET verification = NULL WHERE email = %s AND verification = %s;", (email.lower(), code))
-        retval = cur.rowcount != 0
-    return retval
+        success = cur.rowcount != 0
+    return success
 
 @bp.route("/verify/<int:code>", methods=["PUT"])
 def verify(code: int) -> Response:
