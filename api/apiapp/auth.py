@@ -30,6 +30,7 @@ def authenticate(func):
             g.userid = id
         
         return func(*args, **kwargs)
+    inner.__name__ = func.__name__
     return inner
 
 @bp.app_errorhandler(Unauthorized)

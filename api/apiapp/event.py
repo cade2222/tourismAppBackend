@@ -91,3 +91,23 @@ def create():
     if not errors:
         create_event(**request.json)
     return errors
+
+
+def list_events():
+    events = []
+    assert isinstance(g.conn, psycopg.Connection)
+    with g.conn.cursor() as cur:
+        cur.execute("SELECT id, displayname, coords FROM events;")
+        for row in cur:
+            id, name, loc = row
+            events.append({"id": id, "name": name, "location": None})
+            if loc is not None:
+                assert isinstance(loc, Point)
+                events[-1]["location"] = {"lat": loc.lat, "lon": loc.lon}
+    return events
+
+
+@bp.route("/list", methods=["GET"])
+@authenticate
+def list():
+    return list_events()

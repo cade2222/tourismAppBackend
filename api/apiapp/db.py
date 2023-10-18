@@ -7,14 +7,13 @@ import sys
 
 class PointDumper(psycopg.adapt.Dumper):
     oid = psycopg.adapters.types["point"].oid
-
     def dump(self, obj: Point) -> bytes:
-        print(obj, file=sys.stderr)
         return ("(%s, %s)" % (obj.lat, obj.lon)).encode()
 
 class PointLoader(psycopg.adapt.Loader):
-    def load(self, data: bytes) -> Point:
-        m = re.match(r"\(([^)]+),([^)])\)", data.decode())
+    def load(self, data: memoryview) -> Point:
+        print(data.tobytes().decode(), file=sys.stderr)
+        m = re.match(r"\(([^)]+),([^)]+)\)", data.tobytes().decode())
         try:
             if m is not None:
                 return Point(float(m.group(1)), float(m.group(2)))
