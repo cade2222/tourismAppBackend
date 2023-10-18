@@ -1,5 +1,6 @@
 from flask import Blueprint, request, g, abort
 import psycopg
+import psycopg.types.composite
 from .auth import authenticate
 
 bp = Blueprint("event", __name__, url_prefix="/event")
@@ -32,7 +33,7 @@ def create_event(displayname: str, description: str | None = None, location: dic
                     (displayname, description if description is not None else "", g.userid))
         if location is not None:
             id, = cur.fetchone()
-            cur.execute("UPDATE events SET latitude = %s, longitude = %s WHERE id = %s;", (location["lat"], location["lon"], id))
+            cur.execute("UPDATE events SET coords = '(%s,%s)' WHERE id = %s;", (float(location["lat"]), float(location["lon"]), id))
 
 @bp.route("/create", methods=["POST"])
 @authenticate
