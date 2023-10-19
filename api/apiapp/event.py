@@ -128,14 +128,13 @@ def event_add_user(eventid: int, userid: int) -> Response:
     assert isinstance(g.conn, psycopg.Connection)
     assert isinstance(g.userid, int)
 
-    if userid != g.userid:
-        abort(403)
-
     with g.conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM events WHERE id = %s;", (eventid,))
         count, = cur.fetchone()
         if count == 0:
             abort(404)
+        if userid != g.userid:
+            abort(403)
         cur.execute("SELECT COUNT(*) FROM attendees WHERE userid = %s AND eventid = %s;", (g.userid, eventid))
         count, = cur.fetchone()
         if count == 0:
