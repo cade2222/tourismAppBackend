@@ -78,21 +78,21 @@ def check_conflicts(username: str, email: str, **kwargs) -> list:
     return errors
 
 
-def create_user(username: str, password: str, email: str, displayname: str | None = None, **kwargs) -> None:
+def create_user(username: str, password: str, email: str, displayname: str | None = None, **kwargs) -> int:
     """
     Adds a user with the given name, password, and email address (and, optionally, display name) to the database.
 
     Returns an error list on failure (see docstring for `register()`).
     """
-    errors = []
-
     passwordhash = generate_password_hash(password)
 
     assert isinstance(g.conn, psycopg.Connection)
     with g.conn.cursor() as cur:
-        cur.execute("INSERT INTO users(username, password, email) VALUES (%s, %s, %s);", (username.lower(), passwordhash, email.lower()))
+        cur.execute("INSERT INTO users(username, password, email) VALUES (%s, %s, %s) RETURNING id;", (username.lower(), passwordhash, email.lower()))
+        id, = cur.fetchone()
         if displayname is not None and len(displayname) != 0:
-            cur.execute("UPDATE users SET displayname = %s WHERE username = %s;", (displayname, username))
+            cur.execute("UPDATE users SET displayname = %s WHERE id = %s;", (displayname, id))
+        return id
 
 
 def send_verification_email(username: str, email: str, **kwargs) -> None:
@@ -114,18 +114,12 @@ def register() -> Response:
         - `password`: the new user's password
         - `email`: the new user's email
         - `displayname` (optional): the new user's display name, or NULL / empty string for none
-
-        
-    Output: a JSON array with objects of the following format:
-        - `field`: the JSON field that contained an error
-        - `description`: why the field was in error
-
-    If the request was successful, an empty array will be returned.
     
     Status Codes:
         - 415 if the request was not in JSON format.
-        - 422 if the JSON format did not contain the correct fields, or they were the wrong data type.
-        - 200 if the syntax was correct, even if the request was not processed correctly.
+        - 400 if the JSON was malformatted, did not contain the correct fields, or they were the wrong data type.
+        - 422 if the JSON syntax was correct but the request could not be processed.
+        - 200 if the request succeeded.
     
     The following requirements are in place for the inputs:
         - `username` must contain no more than 31 characters.
@@ -138,21 +132,23 @@ def register() -> Response:
     if request.json is None:
         abort(415)
     if not isinstance(request.json, dict):
-        abort(422)
+        abort(400)
     if "username" not in request.json or "password" not in request.json or "email" not in request.json:
-        abort(422)
+        abort(400)
     if not isinstance(request.json["username"], str) or not isinstance(request.json["password"], str) \
         or not isinstance(request.json["email"], str) \
         or ("displayname" in request.json and not isinstance(request.json["displayname"], str)):
-        abort(422)
+        abort(400)
     
     errors = validate_registration(**request.json)
-    if len(errors) == 0:
+    if not errors:
         errors = check_conflicts(**request.json)
-    if len(errors) == 0:
-        create_user(**request.json)
-        send_verification_email(**request.json)
-    return errors
+    if errors:
+        return (errors, 422)
+
+    id = create_user(**request.json)
+    send_verification_email(**request.json)
+    return {"id": id}
 
 
 def is_verified() -> bool:
