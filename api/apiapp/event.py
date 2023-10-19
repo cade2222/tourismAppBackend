@@ -57,10 +57,11 @@ def create() -> Response:
         - `location.lat` must be between -90 and 90, inclusive
     
     The following status codes will be returned:
-        - 415 if the request is not in JSON format.
-        - 400 if the JSON is malformatted or does not contain the correct values.
-        - 422 if the input data is invalid.
-        - 200 if the creation was successful.
+        - 401: Need to authenticate.
+        - 415: Request body is not in JSON format.
+        - 400: JSON syntax is invalid, or object does not contain the right fields.
+        - 422: One or more of the event options are invalid.
+        - 200: Changes were successful.
     
     If a 422 status code is returned, the response body will contain a JSON array of errors in the following format:
         - `field`: the field in which the error occurred
@@ -95,6 +96,13 @@ def create() -> Response:
 
 
 def get_event_info(id: int) -> dict:
+    """
+    Gets the info of the event with the given ID.
+
+    Requires g.userid to be set (i.e., a function that calls it should be wrapped with @authenticate).
+    
+    Returns a JSON object with the event data (see docstring for `event_get()`), or None if it does not exist.
+    """
     assert isinstance(g.conn, psycopg.Connection)
     assert isinstance(g.userid, int)
     info = None
@@ -118,6 +126,28 @@ def get_event_info(id: int) -> dict:
 @bp.route("/<int:eventid>", methods=["GET"])
 @authenticate
 def event_get(eventid: int) -> Response:
+    """
+    Gets the information of the event associated with the given id.
+
+    Requires HTTP Basic Authentication.
+
+    Status Codes:
+        - 401: Need to authenticate.
+        - 404: Event does not exist.
+        - 200: Request successful.
+
+    On 200, returns a JSON object with the following properties:
+        - `displayname`: the display name of the event
+        - `description`: the description of the event
+        - `location`: a JSON object containing the coordinates of the event, or null
+            - `lat`: the latitude of the event
+            - `lon`: the longitude of the event
+        - `attendees`: an array of users attending the event, each in the following format:
+            - `id`: the user's ID
+            - `username`: the user's username
+            - `displayname`: the user's display name
+        - `attending`: whether the logged-in user is attending the event
+    """
     info = get_event_info(eventid)
     if info is None:
         abort(404)
@@ -125,6 +155,13 @@ def event_get(eventid: int) -> Response:
 
 
 def event_add_user(eventid: int, userid: int) -> Response:
+    """
+    Adds the user with the given id to the event with the given ID.
+    
+    Requires g.userid to be set (i.e., a function that calls it should be wrapped with @authenticate).
+
+    If no errors are thrown, this will return a successful response (see docstring for `event_put()`).
+    """
     assert isinstance(g.conn, psycopg.Connection)
     assert isinstance(g.userid, int)
 
@@ -145,11 +182,35 @@ def event_add_user(eventid: int, userid: int) -> Response:
 
 @bp.route("/<int:eventid>/<int:userid>", methods=["PUT"])
 @authenticate
-def event_put(eventid: int, userid: int) -> Response:
+def event_user_put(eventid: int, userid: int) -> Response:
+    """
+    Adds the user with the given id to the event with the given ID.
+    A user can only add themselves to any event.
+
+    Requires HTTP Basic Authentication.
+
+    Input: None
+
+    Status Codes:
+        - 401: Need to authenticate.
+        - 404: Event does not exist.
+        - 403: User is not authorized to add this user.
+        - 201: User was successfully added to the event.
+        - 204: User is already in event (still successful).
+    
+    The response will not contain any content.
+    """
     return event_add_user(eventid, userid)
 
 
 def event_remove_user(eventid: int, userid: int) -> Response:
+    """
+    Removes the given user from the given event.
+
+    Requires g.userid to be set (i.e., a function that calls it should be wrapped with @authenticate).
+
+    Returns a successful response (see docstring for `event_user_delete`) if no errors are thrown.
+    """
     assert isinstance(g.conn, psycopg.Connection)
     assert isinstance(g.userid, int)
     with g.conn.cursor() as cur:
@@ -169,10 +230,33 @@ def event_remove_user(eventid: int, userid: int) -> Response:
 @bp.route("/<int:eventid>/<int:userid>", methods=["DELETE"])
 @authenticate
 def event_user_delete(eventid: int, userid: int) -> Response:
+    """
+    Removes a user from an event.
+    A user can remove themselves from any event they are attending, and a host can remove any user from their own event.
+
+    Requires HTTP Basic Authentication.
+
+    Input: None
+
+    Status Codes:
+        - 401: Need to authenticate.
+        - 404: Event does not exist, or user is not attending event.
+        - 403: User is not authorized to remove this user.
+        - 204: Deletion was successful.
+    
+    The response will not contain any content.
+    """
     return event_remove_user(eventid, userid)
 
 
 def delete_event(eventid: int) -> Response:
+    """
+    Deletes the given event.
+
+    Requires g.userid to be set (i.e., a function that calls it should be wrapped with @authenticate).
+
+    Returns a successful response (see docstring for `event_delete()`) if no errors are thrown.
+    """
     assert isinstance(g.conn, psycopg.Connection)
     assert isinstance(g.userid, int)
     with g.conn.cursor() as cur:
@@ -189,10 +273,34 @@ def delete_event(eventid: int) -> Response:
 @bp.route("/<int:eventid>", methods=["DELETE"])
 @authenticate
 def event_delete(eventid: int):
+    """
+    Deletes the event with the given ID.
+    An event can only be deleted by its host.
+
+    Requires HTTP Basic Authentication.
+
+    Input: None
+
+    Status Codes:
+        - 401: Need to authenticate.
+        - 404: Event does not exist.
+        - 403: User is not authorized to delete this event.
+        - 204: Deletion was successful.
+
+    The response will not contain any content.
+    """
     return delete_event(eventid)
 
 
 def update_event_settings(eventid: int, **kwargs) -> Response:
+    """
+    Updates the settings for the given event to those in **kwargs.
+    If a setting is listed in **kwargs, it will be updated. Otherwise, it will remain the same.
+
+    Requires g.userid to be set.
+
+    Returns either a successful or 422 response (see docstring for `event_patch()`) if no errors are thrown.
+    """
     assert isinstance(g.conn, psycopg.Connection)
     assert isinstance(g.userid, int)
     with g.conn.cursor() as cur:
@@ -224,6 +332,32 @@ def update_event_settings(eventid: int, **kwargs) -> Response:
 @bp.route("/<int:eventid>", methods=["PATCH"])
 @authenticate
 def event_patch(eventid: int):
+    """
+    Update the settings for the given event.
+    Only the event's host can change its settings.
+
+    Input: a JSON object with zero or more of the following objects:
+        - `displayname`: the name of the event
+        - `description`: a description of the event, or NULL
+        - `location`: a JSON object containing the coordinates of the event, or NULL
+            - `lat`: the latitude, in degrees
+            - `lon`: the longitude, in degrees
+    
+    The validation requirements are the same as those for the "/event" creation hook (see docstring for `create()`).
+    
+    Status Codes:
+        - 401: Need to authenticate.
+        - 404: Event does not exist.
+        - 403: User is not authorized to make changes.
+        - 422: One or more of the setting changes are invalid.
+        - 204: Changes were successful.
+    
+    A successful (204) response will contain no content.
+
+    An invalid (422) response will contain a JSON array of errors in the following format:
+        - `field`: the field in which the error occurred
+        - `description`: a description of the error
+    """
     if request.json is None:
         abort(415)
     if not isinstance(request.json, dict):
