@@ -347,6 +347,7 @@ def event_patch(eventid: int):
     
     Status Codes:
         - 401: Need to authenticate.
+        - 415: Request body is not in JSON format.
         - 404: Event does not exist.
         - 403: User is not authorized to make changes.
         - 422: One or more of the setting changes are invalid.
