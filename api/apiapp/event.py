@@ -23,7 +23,7 @@ def validate_create_inputs(displayname: str, description: str | None = None, loc
         errors.append({"field": "location", "description": "Latitude must be between -90 and 90 degrees."})
     return errors
 
-def create_event(displayname: str, description: str | None = None, location: dict | None = None, **kwargs) -> None:
+def create_event(displayname: str, description: str | None = None, location: dict | None = None, **kwargs) -> int:
     """
     Adds an event with the given information to the database.
     """
@@ -32,14 +32,15 @@ def create_event(displayname: str, description: str | None = None, location: dic
     with g.conn.cursor() as cur:
         cur.execute("INSERT INTO events(displayname, description, host) VALUES (%s, %s, %s) RETURNING id;", 
                     (displayname, description if description is not None else "", g.userid))
+        id, = cur.fetchone()
         if location is not None:
-            id, = cur.fetchone()
             coords = Point(float(location["lat"]), float(location["lon"]))
             cur.execute("UPDATE events SET coords = %s WHERE id = %s;", (coords, id))
+        return id
 
 @bp.route("", methods=["POST"])
 @authenticate
-def create():
+def create() -> Response:
     """
     API endpoint for creating a new event.
 
@@ -58,42 +59,42 @@ def create():
     
     The following status codes will be returned:
         - 415 if the request is not in JSON format.
-        - 400 if the JSON is malformatted.
-        - 422 if the JSON is not of the right type or does not contain the right values.
-        - 200 if the JSON is semantically correct, even if other errors are returned.
+        - 400 if the JSON is malformatted or does not contain the correct values.
+        - 422 if the input data is invalid.
+        - 200 if the creation was successful.
     
-    If a 200 status code is returned, the response body will contain a JSON array of error objects containing the following properties:
-        - `field`: the top-level field in which the error occurred
+    If a 422 status code is returned, the response body will contain a JSON array of errors in the following format:
+        - `field`: the field in which the error occurred
         - `description`: a description of the error
     
-    If this array is non-empty, the request was not successful.
-    If the array is empty, the request can be assumed to have been successful.
+    If a 200 status code is returned, the response body will contain a JSON object containing the following properties:
+        - `id`: the ID of the event
     """
     if request.json is None:
         abort(415)
     if not isinstance(request.json, dict):
-        abort(422)
+        abort(400)
     if "displayname" not in request.json or not isinstance(request.json["displayname"], str):
-        abort(422)
+        abort(400)
     if "description" in request.json and not isinstance(request.json["description"], str):
-        abort(422)
+        abort(400)
     if "location" in request.json:
         if not isinstance(request.json["location"], dict):
-            abort(422)
+            abort(400)
         if "lat" not in request.json["location"] or "lon" not in request.json["location"]:
-            abort(422)
+            abort(400)
         try:
             _ = float(request.json["location"]["lat"])
             _ = float(request.json["location"]["lon"])
         except ValueError:
-            abort(422)
+            abort(400)
     errors = validate_create_inputs(**request.json)
-    if not errors:
-        create_event(**request.json)
-    return errors
+    if errors:
+        return (errors, 422)
+    return {"id": create_event(**request.json)}
 
 
-def get_event_info(id: int):
+def get_event_info(id: int) -> dict:
     assert isinstance(g.conn, psycopg.Connection)
     assert isinstance(g.userid, int)
     info = None
@@ -116,7 +117,7 @@ def get_event_info(id: int):
 
 @bp.route("/<int:eventid>", methods=["GET"])
 @authenticate
-def event_get(eventid: int):
+def event_get(eventid: int) -> Response:
     info = get_event_info(eventid)
     if info is None:
         abort(404)
@@ -168,5 +169,5 @@ def event_remove_user(eventid: int, userid: int) -> Response:
 
 @bp.route("/<int:eventid>/<int:userid>", methods=["DELETE"])
 @authenticate
-def event_user_delete(eventid: int, userid: int):
+def event_user_delete(eventid: int, userid: int) -> Response:
     return event_remove_user(eventid, userid)
