@@ -1,4 +1,4 @@
-from flask import Blueprint, request, g, abort
+from flask import Blueprint, request, g, abort, Response
 import psycopg
 import psycopg.types.composite
 from .auth import authenticate
@@ -37,7 +37,7 @@ def create_event(displayname: str, description: str | None = None, location: dic
             coords = Point(float(location["lat"]), float(location["lon"]))
             cur.execute("UPDATE events SET coords = %s WHERE id = %s;", (coords, id))
 
-@bp.route("/create", methods=["POST"])
+@bp.route("", methods=["POST"])
 @authenticate
 def create():
     """
@@ -102,17 +102,16 @@ def get_event_info(id: int):
         if cur.rowcount == 0:
             return None
         name, description, location = cur.fetchone()
-        info = {"displayname": name, "description": description, "location": None, "attendees": 0, "attending": False}
+        info = {"displayname": name, "description": description, "location": None, "attendees": [], "attending": False}
         if location is not None:
             assert isinstance(location, Point)
             info["location"] = {"lat": location.lat, "lon": location.lon}
-        cur.execute("SELECT userid FROM attendees WHERE eventid = %s;", (id,))
-        info["attendees"] = cur.rowcount
+        cur.execute("SELECT attendees.userid, users.username, users.displayname FROM (attendees JOIN users ON users.id = attendees.userid) WHERE eventid = %s;", (id,))
         for row in cur:
-            uid, = row
+            uid, uname, udname = row
+            info["attendees"].append({"id": uid, "username": uname, "displayname": udname})
             if uid == g.userid:
                 info["attending"] = True
-                break
     return info
 
 @bp.route("/<int:eventid>", methods=["GET"])
@@ -122,3 +121,52 @@ def event_get(eventid: int):
     if info is None:
         abort(404)
     return info
+
+
+def event_add_user(eventid: int, userid: int) -> Response:
+    assert isinstance(g.conn, psycopg.Connection)
+    assert isinstance(g.userid, int)
+
+    if userid != g.userid:
+        abort(403)
+
+    with g.conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM events WHERE id = %s;", (eventid,))
+        count, = cur.fetchone()
+        if count == 0:
+            abort(404)
+        cur.execute("SELECT COUNT(*) FROM attendees WHERE userid = %s AND eventid = %s;", (g.userid, eventid))
+        count, = cur.fetchone()
+        if count == 0:
+            cur.execute("INSERT INTO attendees(userid, eventid) VALUES (%s, %s);", (g.userid, eventid))
+            return ("", 201)
+        else:
+            return ("", 204)
+
+@bp.route("/<int:eventid>/<int:userid>", methods=["PUT"])
+@authenticate
+def event_put(eventid: int, userid: int) -> Response:
+    return event_add_user(eventid, userid)
+
+
+def event_remove_user(eventid: int, userid: int) -> Response:
+    assert isinstance(g.conn, psycopg.Connection)
+    assert isinstance(g.userid, int)
+    with g.conn.cursor() as cur:
+        if g.userid != userid:
+            cur.execute("SELECT host FROM events WHERE id = %s;", (eventid,))
+            if cur.rowcount == 0:
+                abort(404)
+            host, = cur.fetchone()
+            if g.userid != host:
+                abort(403)
+        cur.execute("DELETE FROM attendees WHERE userid = %s AND eventid = %s;", (userid, eventid))
+        if cur.rowcount == 0:
+            abort(404)
+    return ("", 204)
+        
+
+@bp.route("/<int:eventid>/<int:userid>", methods=["DELETE"])
+@authenticate
+def event_user_delete(eventid: int, userid: int):
+    return event_remove_user(eventid, userid)
