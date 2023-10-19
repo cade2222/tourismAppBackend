@@ -93,21 +93,32 @@ def create():
     return errors
 
 
-def list_events():
-    events = []
+def get_event_info(id: int):
     assert isinstance(g.conn, psycopg.Connection)
+    assert isinstance(g.userid, int)
+    info = None
     with g.conn.cursor() as cur:
-        cur.execute("SELECT id, displayname, coords FROM events;")
+        cur.execute("SELECT displayname, description, coords FROM events WHERE id = %s;", (id,))
+        if cur.rowcount == 0:
+            return None
+        name, description, location = cur.fetchone()
+        info = {"displayname": name, "description": description, "location": None, "attendees": 0, "attending": False}
+        if location is not None:
+            assert isinstance(location, Point)
+            info["location"] = {"lat": location.lat, "lon": location.lon}
+        cur.execute("SELECT userid FROM attendees WHERE eventid = %s;", (id,))
+        info["attendees"] = cur.rowcount
         for row in cur:
-            id, name, loc = row
-            events.append({"id": id, "name": name, "location": None})
-            if loc is not None:
-                assert isinstance(loc, Point)
-                events[-1]["location"] = {"lat": loc.lat, "lon": loc.lon}
-    return events
+            uid, = row
+            if uid == g.userid:
+                info["attending"] = True
+                break
+    return info
 
-
-@bp.route("/list", methods=["GET"])
+@bp.route("/<int:eventid>", methods=["GET"])
 @authenticate
-def list():
-    return list_events()
+def event_get(eventid: int):
+    info = get_event_info(eventid)
+    if info is None:
+        abort(404)
+    return info
