@@ -52,7 +52,7 @@ def validate_registration(username: str, password: str, email: str, displayname:
         errors.append({"field": "username", "description": "Username must be at most 31 characters and contain only alphanumeric characters and dashes."})
     if re.compile(r"^(?=.*\d)(?=.*[A-Z])(?=.*[a-z])(?=.*[^0-9A-z])[ -~]{8,}$").match(password) is None:
         errors.append({"field": "password", "description": "Password must be at least 8 characters, contain only ASCII characters, and contain at least one uppercase letter, lowercase letter, number, and special character."})
-    if re.compile(r"^(?!.{256,})[ -?A-~]+@[A-z0-9]([A-z0-9\-]*[A-z0-9])?(\.[A-z0-9]([A-z0-9\-]*[A-z0-9]))*$").match(email) is None:
+    if re.compile(r"^(?!.{256,})[ -?A-~]+@[A-z0-9]([A-z0-9\-]*[A-z0-9])?(\.[A-z0-9]([A-z0-9\-]*[A-z0-9]))*$", re.IGNORECASE).match(email) is None:
         errors.append({"field": "email", "description": "Email is either too long or not valid."})
     if displayname is not None and len(displayname) > 63:
         errors.append({"field": "displayname", "description": "Display name cannot be more than 63 characters."})
@@ -79,21 +79,21 @@ def check_conflicts(username: str, email: str, **kwargs) -> list:
     return errors
 
 
-def create_user(username: str, password: str, email: str, displayname: str | None = None, **kwargs) -> None:
+def create_user(username: str, password: str, email: str, displayname: str | None = None, **kwargs) -> int:
     """
     Adds a user with the given name, password, and email address (and, optionally, display name) to the database.
 
     Returns an error list on failure (see docstring for `register()`).
     """
-    errors = []
-
     passwordhash = generate_password_hash(password)
 
     assert isinstance(g.conn, psycopg.Connection)
     with g.conn.cursor() as cur:
-        cur.execute("INSERT INTO users(username, password, email) VALUES (%s, %s, %s);", (username.lower(), passwordhash, email.lower()))
+        cur.execute("INSERT INTO users(username, password, email) VALUES (%s, %s, %s) RETURNING id;", (username.lower(), passwordhash, email.lower()))
+        id, = cur.fetchone()
         if displayname is not None and len(displayname) != 0:
-            cur.execute("UPDATE users SET displayname = %s WHERE username = %s;", (displayname, username))
+            cur.execute("UPDATE users SET displayname = %s WHERE id = %s;", (displayname, id))
+        return id
 
 
 def send_verification_email(username: str, email: str, **kwargs) -> None:
@@ -103,7 +103,7 @@ def send_verification_email(username: str, email: str, **kwargs) -> None:
     pass
 
 
-@bp.route("/register", methods=["POST"])
+@bp.route("", methods=["POST"])
 def register() -> Response:
     """
     Registers a new user into the database.
@@ -115,18 +115,19 @@ def register() -> Response:
         - `password`: the new user's password
         - `email`: the new user's email
         - `displayname` (optional): the new user's display name, or NULL / empty string for none
-
-        
-    Output: a JSON array with objects of the following format:
-        - `field`: the JSON field that contained an error
-        - `description`: why the field was in error
-
-    If the request was successful, an empty array will be returned.
     
     Status Codes:
         - 415 if the request was not in JSON format.
-        - 422 if the JSON format did not contain the correct fields, or they were the wrong data type.
-        - 200 if the syntax was correct, even if the request was not processed correctly.
+        - 400 if the JSON was malformatted, did not contain the correct fields, or they were the wrong data type.
+        - 422 if the JSON syntax was correct but the request could not be processed.
+        - 200 if the request succeeded.
+
+    If a 422 status code is returned, the response body will contain a JSON array of errors in the following format:
+        - `field`: the field in which the error occurred
+        - `description`: a description of the error
+    
+    If a 200 status code is returned, the response body will contain a JSON object containing the following properties:
+        - `id`: the ID of the user
     
     The following requirements are in place for the inputs:
         - `username` must contain no more than 31 characters.
@@ -139,21 +140,23 @@ def register() -> Response:
     if request.json is None:
         abort(415)
     if not isinstance(request.json, dict):
-        abort(422)
+        abort(400)
     if "username" not in request.json or "password" not in request.json or "email" not in request.json:
-        abort(422)
+        abort(400)
     if not isinstance(request.json["username"], str) or not isinstance(request.json["password"], str) \
         or not isinstance(request.json["email"], str) \
         or ("displayname" in request.json and not isinstance(request.json["displayname"], str)):
-        abort(422)
+        abort(400)
     
     errors = validate_registration(**request.json)
-    if len(errors) == 0:
+    if not errors:
         errors = check_conflicts(**request.json)
-    if len(errors) == 0:
-        create_user(**request.json)
-        send_verification_email(**request.json)
-    return errors
+    if errors:
+        return (errors, 422)
+
+    id = create_user(**request.json)
+    send_verification_email(**request.json)
+    return {"id": id}
 
 
 def is_verified() -> bool:
@@ -170,7 +173,7 @@ def is_verified() -> bool:
         verified = cur.rowcount != 0
     return verified
 
-@bp.route("/login", methods=["GET"])
+@bp.route("", methods=["GET"])
 @authenticate
 def login() -> Response:
     """
@@ -181,7 +184,7 @@ def login() -> Response:
     return {"id": g.userid, "verified": is_verified()}
 
 
-def verify_email(code: int, email: str, **kwargs) -> bool:
+def verify_email(code: int, email: str, **kwargs) -> Response:
     """
     Verifies the given email with the given code.
 
@@ -190,32 +193,42 @@ def verify_email(code: int, email: str, **kwargs) -> bool:
     success = False
     assert isinstance(g.conn, psycopg.Connection)
     with g.conn.cursor() as cur:
-        cur.execute("UPDATE users SET verification = NULL WHERE email = %s AND verification = %s;", (email.lower(), code))
-        success = cur.rowcount != 0
-    return success
+        cur.execute("SELECT verification FROM users WHERE email = %s;", (email.lower()))
+        if cur.rowcount == 0:
+            abort(422)
+        actualcode, = cur.fetchone()
+        if actualcode is None:
+            return ("", 204)
+        elif code != actualcode:
+            abort(422)
+        cur.execute("UPDATE users SET verification = NULL WHERE email = %s;", (email.lower(), code))
+        return ("", 201)
 
-@bp.route("/verify/<int:code>", methods=["PUT"])
-def verify(code: int) -> Response:
+@bp.route("/verify", methods=["PUT"])
+def verify() -> Response:
     """
     Verifies the given email.
 
     Input: a JSON object in the following format:
         - `email`: the email to verify
-
-    Output: a JSON array in the following format:
-        - `success`: true if verification was successful, false otherwise
+        - `code`: the verification code
     
     Status Codes:
-        - 415 if the type was not JSON
-        - 422 if the input did not contain the required fields
-        - 200 otherwise (even if the verification failed; see JSON output for actual result)
+        - 415 if the request was not in JSON format.
+        - 400 if the JSON was malformatted, did not contain the correct fields, or they were the wrong data type.
+        - 422 if the JSON syntax was correct but the email was not verified.
+        - 201 if the email was verified.
+        - 204 if the email was already verified.
+    
+    If a 200 status code is returned, the response body will contain a JSON object containing the following properties:
+        - `id`: the ID of the user
     """
     if request.json is None:
         abort(415)
     if not isinstance(request.json, dict):
-        abort(422)
+        abort(400)
     if "email" not in request.json or not isinstance(request.json["email"], str):
-        abort(422)
-    if "code" in request.json:
-        abort(422)
-    return {"success": verify_email(code=code, **request.json)}
+        abort(400)
+    if "code" not in request.json or not isinstance(request.json["code"], int):
+        abort(400)
+    return verify_email(**request.json)
