@@ -171,3 +171,23 @@ def event_remove_user(eventid: int, userid: int) -> Response:
 @authenticate
 def event_user_delete(eventid: int, userid: int) -> Response:
     return event_remove_user(eventid, userid)
+
+
+def delete_event(eventid: int) -> Response:
+    assert isinstance(g.conn, psycopg.Connection)
+    assert isinstance(g.userid, int)
+    with g.conn.cursor() as cur:
+        cur.execute("SELECT host FROM events WHERE id = %s;", (eventid,))
+        if cur.rowcount == 0:
+            abort(404)
+        host, = cur.fetchone()
+        if host != g.userid:
+            abort(403)
+        cur.execute("DELETE FROM attendees WHERE eventid = %s;", (eventid,))
+        cur.execute("DELETE FROM events WHERE id = %s;", (eventid,))
+        return ("", 204)
+
+@bp.route("/<int:eventid>", methods=["DELETE"])
+@authenticate
+def event_delete(eventid: int):
+    return delete_event(eventid)
