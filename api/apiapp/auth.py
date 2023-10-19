@@ -178,7 +178,7 @@ def login() -> Response:
     Response body is a JSON object with one field:
         - `verified`: true if the user account is verified, false otherwise.
     """
-    return {"verified": is_verified()}
+    return {"id": g.userid, "verified": is_verified()}
 
 
 def verify_email(code: int, email: str, **kwargs) -> bool:
