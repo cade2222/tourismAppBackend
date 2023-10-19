@@ -13,7 +13,6 @@ class PointDumper(psycopg.adapt.Dumper):
 class PointLoader(psycopg.adapt.Loader):
     def load(self, data) -> Point:
         data_decodeable = data.tobytes() if isinstance(data, memoryview) else data
-        print(data.tobytes().decode(), file=sys.stderr)
         m = re.match(r"\(([^)]+),([^)]+)\)", data_decodeable.decode())
         try:
             if m is not None:
