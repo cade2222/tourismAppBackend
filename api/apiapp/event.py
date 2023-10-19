@@ -76,9 +76,10 @@ def create() -> Response:
         abort(400)
     if "displayname" not in request.json or not isinstance(request.json["displayname"], str):
         abort(400)
-    if "description" in request.json and not isinstance(request.json["description"], str):
+    if "description" in request.json and request.json["description"] is not None \
+        and not isinstance(request.json["description"], str):
         abort(400)
-    if "location" in request.json:
+    if "location" in request.json and request.json["location"] is not None:
         if not isinstance(request.json["location"], dict):
             abort(400)
         if "lat" not in request.json["location"] or "lon" not in request.json["location"]:
@@ -190,3 +191,59 @@ def delete_event(eventid: int) -> Response:
 @authenticate
 def event_delete(eventid: int):
     return delete_event(eventid)
+
+
+def update_event_settings(eventid: int, **kwargs) -> Response:
+    assert isinstance(g.conn, psycopg.Connection)
+    assert isinstance(g.userid, int)
+    with g.conn.cursor() as cur:
+        cur.execute("SELECT host, displayname, description, coords FROM events WHERE id = %s;", (eventid,))
+        if cur.rowcount == 0:
+            abort(404)
+        host, displayname, description, coords = cur.fetchone()
+        location = None
+        if coords is not None:
+            assert isinstance(coords, Point)
+            location = {"lat": coords.lat, "lon": coords.lon}
+        if g.userid != host:
+            abort(403)
+        if "displayname" in kwargs:
+            displayname = kwargs["displayname"]
+        if "description" in kwargs:
+            description = kwargs["description"]
+        if "location" in kwargs:
+            location = kwargs["location"]
+            if location is not None:
+                coords = Point(float(location["lat"]), float(location["lon"]))
+        errors = validate_create_inputs(displayname, description, location)
+        if errors:
+            return (errors, 422)
+        cur.execute("UPDATE events SET displayname = %s, description = %s, coords = %s WHERE id = %s;",
+                    (displayname, description if description is not None else "", coords, eventid))
+        return ("", 204)
+
+@bp.route("/<int:eventid>", methods=["PATCH"])
+@authenticate
+def event_patch(eventid: int):
+    if request.json is None:
+        abort(415)
+    if not isinstance(request.json, dict):
+        abort(400)
+    if "displayname" in request.json and not isinstance(request.json["displayname"], str):
+        abort(400)
+    if "description" in request.json and request.json["description"] is not None \
+        and not isinstance(request.json["description"], str):
+        abort(400)
+    if "location" in request.json and "location" is not None:
+        if not isinstance(request.json["location"], dict):
+            abort(400)
+        if "lat" not in request.json["location"] or "lon" not in request.json["location"]:
+            abort(400)
+        try:
+            _ = float(request.json["location"]["lat"])
+            _ = float(request.json["location"]["lon"])
+        except ValueError:
+            abort(400)
+    if "eventid" in request.json:
+        abort(400)
+    return update_event_settings(eventid = eventid, **request.json)
