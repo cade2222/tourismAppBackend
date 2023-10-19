@@ -19,7 +19,7 @@ def validate_create_inputs(displayname: str, description: str | None = None, loc
         errors.append({"field": "displayname", "description": "Display name must be less than 256 characters long."})
     if description is not None and len(description) > 10000:
         errors.append({"field": "description", "description": "Description must be at most 10000 characters long."})
-    if not -90.0 <= float(location["lat"]) <= 90.0:
+    if location is not None and not -90.0 <= float(location["lat"]) <= 90.0:
         errors.append({"field": "location", "description": "Latitude must be between -90 and 90 degrees."})
     return errors
 
