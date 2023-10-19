@@ -1,6 +1,5 @@
 from flask import Blueprint, request, g, abort, Response
 import psycopg
-import psycopg.types.composite
 from .auth import authenticate
 from .location import Point
 
