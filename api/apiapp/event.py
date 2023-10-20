@@ -467,8 +467,8 @@ def send_message(eventid: int, text: str, **kwargs) -> Response:
         for _ in range(100):
             try:
                 cur.execute("INSERT INTO messages(eventid, sender, content) VALUES (%s, %s, %s) RETURNING time;", (eventid, g.userid, text))
-                id, = cur.fetchone()
-                return {"id": id}
+                time, = cur.fetchone()
+                return {"time": time}
             except psycopg.errors.UniqueViolation:
                 sleep(0.01)
         print("Error: server timeout while posting message to event %d." % eventid)
@@ -497,7 +497,7 @@ def chat_post(eventid: int) -> Response:
         - 200: Request succeeded.
     
     On a 200 (successful) status code, a JSON object with the following values will be returned.
-        - `id`: the ID of the message.    
+        - `time`: the unique (per-event) timestamp of the message.    
     
     An invalid (422) response will contain a JSON object with the following properties:
         - `description`: a description of the error
@@ -512,3 +512,74 @@ def chat_post(eventid: int) -> Response:
     if errors is not None:
         return errors
     return send_message(eventid = eventid, **request.json)
+
+
+def most_recent_messages(since: int | None, eventid: int, n = 20) -> Response:
+    """
+    Gets the most recent messages in the given event before the given timestamp.
+
+    Requires `g.userid` to be set (i.e., a function that calls this must be wrapped in `@authenticate`).
+
+    Returns a list of at most `n` messages (see the docstring for `chat_get()`) if no error is thrown.
+    """
+    messages = []
+
+    assert isinstance(g.conn, psycopg.Connection)
+    assert isinstance(g.userid, int)
+    with g.conn.cursor() as cur:
+        cur.execute("SELECT host FROM events WHERE id = %s;", (eventid,))
+        if cur.rowcount == 0:
+            abort(404)
+        host, = cur.fetchone()
+        if g.userid != host:
+            cur.execute("SELECT COUNT(*) FROM attendees WHERE userid = %s AND eventid = %s;", (g.userid, eventid))
+            count, = cur.fetchone()
+            if count == 0:
+                abort(403)
+        if since is None:
+            cur.execute("SELECT messages.time, messages.content, users.id, users.username, users.displayname \
+                    FROM (messages LEFT JOIN users ON messages.sender = users.id) \
+                    WHERE messages.eventid = %s \
+                    ORDER BY messages.time DESC LIMIT %s;", (eventid, n))
+        else:
+            cur.execute("SELECT messages.time, messages.content, users.id, users.username, users.displayname \
+                    FROM (messages LEFT JOIN users ON messages.sender = users.id) \
+                    WHERE messages.eventid = %s AND messages.time < %s\
+                    ORDER BY messages.time DESC LIMIT %s;", (eventid, since, n))
+        for row in cur:
+            time, text, uid, uname, dname = row
+            msg = {"time": time, "text": text, "sender": None}
+            if uid is not None:
+                msg["sender"] = {"id": uid, "username": uname, "displayname": dname}
+            messages.append(msg)
+    return messages
+
+@bp.route("/<int:eventid>/chat", methods=["GET"], defaults={"time": None})
+@bp.route("/<int:eventid>/chat/<int:time>")
+@authenticate
+def chat_get(eventid: int, time: int | None) -> Response:
+    """
+    Gets the most recent 20 chat messages.
+    If a time is provided, it gets the most recent 20 chat messages before that timestamp.
+    Only a user who is attending an event or the host of the event can view messages in the chat.
+
+    Requires HTTP Basic Authentication.
+
+    Input: None
+
+    Status Codes:
+        - 401: Need to authenticate.
+        - 404: Event does not exist.
+        - 403: User is not authorized to make this request.
+        - 200: Request successful.
+    
+    On a 200 (successful) status code, a JSON array of messages will be returned,
+    with the most recent messages first, each with the following properties:
+        - `time`: the unique (per-event) timestamp of the message
+        - `text`: the text of the message
+        - `sender`: an object containing information about the sender, or NULL if the user was deleted
+            - `id`: the user's unique ID
+            - `username`: the user's username
+            - `displayname`: the user's display name
+    """
+    return most_recent_messages(since=time, eventid=eventid)
