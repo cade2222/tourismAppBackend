@@ -230,7 +230,7 @@ def event_add_user(eventid: int, userid: int) -> Response:
         else:
             return ("", 204)
 
-@bp.route("/<int:eventid>/<int:userid>", methods=["PUT"])
+@bp.route("/<int:eventid>/user/<int:userid>", methods=["PUT"])
 @authenticate
 def event_user_put(eventid: int, userid: int) -> Response:
     """
@@ -277,7 +277,7 @@ def event_remove_user(eventid: int, userid: int) -> Response:
     return ("", 204)
         
 
-@bp.route("/<int:eventid>/<int:userid>", methods=["DELETE"])
+@bp.route("/<int:eventid>/user/<int:userid>", methods=["DELETE"])
 @authenticate
 def event_user_delete(eventid: int, userid: int) -> Response:
     """
