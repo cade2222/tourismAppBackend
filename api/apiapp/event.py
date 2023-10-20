@@ -316,7 +316,6 @@ def delete_event(eventid: int) -> Response:
         host, = cur.fetchone()
         if host != g.userid:
             abort(403)
-        cur.execute("DELETE FROM attendees WHERE eventid = %s;", (eventid,))
         cur.execute("DELETE FROM events WHERE id = %s;", (eventid,))
         return ("", 204)
 
