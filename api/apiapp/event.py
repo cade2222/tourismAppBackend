@@ -206,7 +206,7 @@ def event_add_user(eventid: int, userid: int) -> Response:
     """
     Adds the user with the given id to the event with the given ID.
     
-    Requires g.userid to be set (i.e., a function that calls it should be wrapped with @authenticate).
+    Requires `g.userid` to be set (i.e., a function that calls it should be wrapped with `@authenticate`).
 
     If no errors are thrown, this will return a successful response (see docstring for `event_put()`).
     """
@@ -255,9 +255,9 @@ def event_remove_user(eventid: int, userid: int) -> Response:
     """
     Removes the given user from the given event.
 
-    Requires g.userid to be set (i.e., a function that calls it should be wrapped with @authenticate).
+    Requires `g.userid` to be set (i.e., a function that calls it should be wrapped with `@authenticate`).
 
-    Returns a successful response (see docstring for `event_user_delete`) if no errors are thrown.
+    Returns a successful response (see docstring for `event_user_delete()`) if no errors are thrown.
     """
     assert isinstance(g.conn, psycopg.Connection)
     assert isinstance(g.userid, int)
@@ -301,7 +301,7 @@ def delete_event(eventid: int) -> Response:
     """
     Deletes the given event.
 
-    Requires g.userid to be set (i.e., a function that calls it should be wrapped with @authenticate).
+    Requires `g.userid` to be set (i.e., a function that calls it should be wrapped with `@authenticate`).
 
     Returns a successful response (see docstring for `event_delete()`) if no errors are thrown.
     """
@@ -345,7 +345,7 @@ def update_event_settings(eventid: int, **kwargs) -> Response:
     Updates the settings for the given event to those in **kwargs.
     If a setting is listed in **kwargs, it will be updated. Otherwise, it will remain the same.
 
-    Requires g.userid to be set.
+    Requires `g.userid` to be set.
 
     Returns either a successful or 422 response (see docstring for `event_patch()`) if no errors are thrown.
     """
