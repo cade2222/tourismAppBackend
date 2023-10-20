@@ -583,3 +583,49 @@ def chat_get(eventid: int, time: int | None) -> Response:
             - `displayname`: the user's display name
     """
     return most_recent_messages(since=time, eventid=eventid)
+
+
+def delete_message(eventid: int, time: int) -> Response:
+    """
+    Delete the message with the given timestamp from the event with the given ID.
+
+    Requires `g.userid` to be set (i.e., a function that calls this must be wrapped in `@authenticate`).
+
+    Returns an empty successful Response (see the docstring for `chat_delete()`) if no errors are thrown.
+    """
+    assert isinstance(g.conn, psycopg.Connection)
+    assert isinstance(g.userid, int)
+    with g.conn.cursor() as cur:
+        cur.execute("SELECT host FROM events WHERE id = %s;", (eventid,))
+        if cur.rowcount == 0:
+            abort(404)
+        host, = cur.fetchone()
+        cur.execute("SELECT sender FROM messages WHERE eventid = %s AND time = %s;", (eventid, time))
+        if cur.rowcount == 0:
+            abort(404)
+        sender, = cur.fetchone()
+        if g.userid != host and (sender is None or g.userid != sender):
+            abort(403)
+        cur.execute("DELETE FROM messages WHERE eventid = %s AND time = %s;", (eventid, time))
+        return ("", 204)
+
+@bp.route("/<int:eventid>/chat/<int:time>", methods=["DELETE"])
+@authenticate
+def chat_delete(eventid: int, time: int):
+    """
+    Delete the message with the given unique (per-event) timestamp from the event with the given ID.
+    Only the host and the user who sent the message are authorized to send this request.
+
+    Requires HTTP Basic Authentication.
+
+    Input: None
+
+    Status Codes:
+        - 401: Need to authenticate.
+        - 404: Event or message does not exist.
+        - 403: User is not authorized to delete this message.
+        - 204: Request was successful.
+    
+    Nothing is returned in the response body.
+    """
+    return delete_message(eventid, time)
