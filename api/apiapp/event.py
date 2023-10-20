@@ -96,6 +96,13 @@ def create() -> Response:
 
 
 def list_events():
+    """
+    Return a list of events that the logged-in user is attending and/or hosting.
+
+    Requires `g.userid` to be set (i.e., a function that calls this must be wrapped in `@authenticate`).
+
+    Returns a JSON object as described in the docstring for `event_list()`.
+    """
     attending = []
     hosting = []
 
@@ -116,6 +123,23 @@ def list_events():
 @bp.route("", methods=["GET"])
 @authenticate
 def event_list():
+    """
+    Get a list of events that the logged-in user is attending and that they are hosting.
+
+    Requires HTTP Basic Authentication.
+
+    Input: None
+
+    Status Codes:
+        - 401: Need to authenticate.
+        - 200: Request successful.
+    
+    Output: a JSON object with the following properties:
+        - `attending`: a list of events that the user is attending, with each event in the following form:
+            - `id`: the database ID of the event
+            - `displayname`: the display name of the event
+        - `hosting`: a list of events that the user is hosting, with events in the same form as those in `attending`.
+    """
     return list_events()
 
 
