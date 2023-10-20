@@ -2,6 +2,8 @@ from flask import Blueprint, request, g, abort, Response
 import psycopg
 from .auth import authenticate
 from .location import Point
+from time import sleep
+from sys import stderr
 
 bp = Blueprint("event", __name__, url_prefix="/event")
 
@@ -416,7 +418,7 @@ def event_patch(eventid: int):
     if "description" in request.json and request.json["description"] is not None \
         and not isinstance(request.json["description"], str):
         abort(400)
-    if "location" in request.json and "location" is not None:
+    if "location" in request.json and request.json["location"] is not None:
         if not isinstance(request.json["location"], dict):
             abort(400)
         if "lat" not in request.json["location"] or "lon" not in request.json["location"]:
@@ -429,3 +431,84 @@ def event_patch(eventid: int):
     if "eventid" in request.json:
         abort(400)
     return update_event_settings(eventid = eventid, **request.json)
+
+
+def validate_message(text: str, **kwargs) -> Response | None:
+    """
+    Ensures the given message is valid.
+
+    Returns an error JSON (as explained in the docstring for `chat_post()`) or `None` if the message is valid.
+    """
+    if len(text) == 0:
+        return {"description": "Message cannot be empty."}
+    if len(text) > 2000:
+        return {"description": "Message must not be more than 2000 characters."}
+    return None
+
+def send_message(eventid: int, text: str, **kwargs) -> Response:
+    """
+    Sends a message with the given content to the event with the given id.
+
+    Requires `g.userid` to be set (i.e., a function that calls it should be wrapped with `@authenticate`).
+
+    Returns a successful JSON object (as explained in the docstring for `chat_post()`) if no errors are thrown.
+    """
+    assert isinstance(g.conn, psycopg.Connection)
+    assert isinstance(g.userid, int)
+    with g.conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM events WHERE id = %s;", (eventid,))
+        count, = cur.fetchone()
+        if count == 0:
+            abort(404)
+        cur.execute("SELECT COUNT(*) FROM attendees WHERE userid = %s AND eventid = %s;", (g.userid, eventid))
+        count, = cur.fetchone()
+        if count == 0:
+            abort(403)
+        for _ in range(100):
+            try:
+                cur.execute("INSERT INTO messages(eventid, sender, content) VALUES (%s, %s, %s) RETURNING time;", (eventid, g.userid, text))
+                id, = cur.fetchone()
+                return {"id": id}
+            except psycopg.errors.UniqueViolation:
+                sleep(0.01)
+        print("Error: server timeout while posting message to event %d." % eventid)
+        abort(500)
+
+@bp.route("/<int:eventid>/chat", methods=["POST"])
+@authenticate
+def chat_post(eventid: int) -> Response:
+    """
+    Post a new message to the event's chat.
+    Requires the logged-in user to be attending the event.
+
+    Requires HTTP Basic Authentication.
+
+    Input: a JSON object containing the following properties:
+        - `text`: the text of the message
+
+    Status Codes:
+        - 401: Need to authenticate.
+        - 415: Request body is not of JSON type.
+        - 400: Request is not in the right format.
+        - 422: Message was invalid.
+        - 404: Event does not exist.
+        - 403: User is not authorized to make this request.
+        - 500: Server timed out while sending message.
+        - 200: Request succeeded.
+    
+    On a 200 (successful) status code, a JSON object with the following values will be returned.
+        - `id`: the ID of the message.    
+    
+    An invalid (422) response will contain a JSON object with the following properties:
+        - `description`: a description of the error
+    """
+    if not isinstance(request.json, dict):
+        abort(400)
+    if "text" not in request.json or not isinstance(request.json["text"], str):
+        abort(400)
+    if "eventid" in request.json:
+        abort(400)
+    errors = validate_message(eventid = eventid, **request.json)
+    if errors is not None:
+        return errors
+    return send_message(eventid = eventid, **request.json)
