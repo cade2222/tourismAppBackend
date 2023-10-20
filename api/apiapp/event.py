@@ -95,6 +95,30 @@ def create() -> Response:
     return {"id": create_event(**request.json)}
 
 
+def list_events():
+    attending = []
+    hosting = []
+
+    assert isinstance(g.conn, psycopg.Connection)
+    assert isinstance(g.userid, int)
+    with g.conn.cursor() as cur:
+        cur.execute("SELECT events.id, events.displayname FROM (attendees JOIN events ON attendees.eventid = events.id) WHERE userid = %s;",
+                    (g.userid,))
+        for row in cur:
+            id, dname = row
+            attending.append({"id": id, "displayname": dname})
+        cur.execute("SELECT id, displayname FROM events WHERE host = %s;", (g.userid,))
+        for row in cur:
+            id, dname = row
+            hosting.append({"id": id, "displayname": dname})
+    return {"attending": attending, "hosting": hosting}
+
+@bp.route("", methods=["GET"])
+@authenticate
+def event_list():
+    return list_events()
+
+
 def get_event_info(id: int) -> dict:
     """
     Gets the info of the event with the given ID.
