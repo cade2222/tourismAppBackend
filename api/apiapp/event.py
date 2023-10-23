@@ -22,6 +22,8 @@ def validate_create_inputs(displayname: str, description: str | None = None, loc
         errors.append({"field": "description", "description": "Description must be at most 10000 characters long."})
     if location is not None and not -90.0 <= float(location["lat"]) <= 90.0:
         errors.append({"field": "location", "description": "Latitude must be between -90 and 90 degrees."})
+    if location is not None and not -180.0 <= float(location["lon"]) <= 180.0:
+        errors.append({"field": "location", "description": "Longitude must be between -180 and 180 degrees."})
     return errors
 
 def create_event(displayname: str, description: str | None = None, location: dict | None = None, **kwargs) -> int:
@@ -57,6 +59,7 @@ def create() -> Response:
         - `displayname` must contain no more than 255 characters.
         - `description` must contain no more than 10000 characters.
         - `location.lat` must be between -90 and 90, inclusive
+        - `location.lon` must be between -180 and 180, inclusive
     
     The following status codes will be returned:
         - 401: Need to authenticate.
