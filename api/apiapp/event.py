@@ -657,7 +657,7 @@ def event_search():
     Input: URL query arguments:
         - `lat`: the user's latitude, as a decimal
         - `lon`: the user's longitude, as a decimal
-        - `radius`: the search radius, in miles
+        - `radius` (optional): the search radius, in miles
     
     Status Codes:
         - 401: Need to authenticate.
@@ -672,12 +672,12 @@ def event_search():
             - `lat`: the latitude
             - `lon`: the longitude
     """
-    if "lat" not in request.args or "lon" not in request.args or "radius" not in request.args:
+    if "lat" not in request.args or "lon" not in request.args:
         abort(400)
     try:
         lat = float(request.args["lat"])
         lon = float(request.args["lon"])
-        radius = float(request.args["radius"])
+        radius = float(request.args.get("radius", default="inf"))
         if radius < 0:
             abort(400)
         return get_events_by_location(Point(lat, lon), radius)
