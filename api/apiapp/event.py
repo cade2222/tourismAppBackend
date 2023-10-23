@@ -628,3 +628,58 @@ def chat_delete(eventid: int, time: int):
     Nothing is returned in the response body.
     """
     return delete_message(eventid, time)
+
+
+def get_events_by_location(location: Point, distance: float) -> list:
+    """
+    List all events not more than `distance` miles from `location`, sorted by distance in ascending order.
+    """
+    assert isinstance(g.conn, psycopg.Connection)
+    with g.conn.cursor() as cur:
+        events = []
+        cur.execute("SELECT id, displayname, coords FROM events WHERE coords IS NOT NULL;")
+        for row in cur:
+            id, dname, evloc = row
+            assert isinstance(evloc, Point)
+            dist = location.distanceto(evloc)
+            if dist.miles <= distance:
+                events.append({"id": id, "displayname": dname, "distance": dist.miles, "location": {"lat": evloc.lat, "lon": evloc.lon}})
+        events.sort(key=lambda x: x["distance"])
+        return events
+
+
+@bp.route("/search", methods=["GET"])
+@authenticate
+def event_search():
+    """
+    Search for an event given the user's coordinates.
+
+    Input: URL query arguments:
+        - `lat`: the user's latitude, as a decimal
+        - `lon`: the user's longitude, as a decimal
+        - `radius`: the search radius, in miles
+    
+    Status Codes:
+        - 401: Need to authenticate.
+        - 400: Did not include correct arguments.
+        - 200: Request successful.
+    
+    Output: a JSON array of events, in the following form, sorted by distance in ascending order:
+        - `id`: the database ID of the event
+        - `displayname`: the display name of the event
+        - `distance`: the distance of the event, in miles
+        - `location`: the location of the event:
+            - `lat`: the latitude
+            - `lon`: the longitude
+    """
+    if "lat" not in request.args or "lon" not in request.args or "radius" not in request.args:
+        abort(400)
+    try:
+        lat = float(request.args["lat"])
+        lon = float(request.args["lon"])
+        radius = float(request.args["radius"])
+        if radius < 0:
+            abort(400)
+        return get_events_by_location(Point(lat, lon), radius)
+    except ValueError:
+        abort(400)
