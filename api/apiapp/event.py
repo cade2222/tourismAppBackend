@@ -3,9 +3,14 @@ import psycopg
 from .auth import authenticate
 from .location import Point
 from time import sleep
-from sys import stderr
+import openai
+import openai.embeddings_utils as emb
 
 bp = Blueprint("event", __name__, url_prefix="/event")
+
+@bp.before_app_request
+def setup_openai():
+    openai.api_key_path = request.environ["OPENAI_KEY_PATH"]
 
 def validate_create_inputs(displayname: str, description: str | None = None, location: dict | None = None, **kwargs) -> list:
     """
@@ -14,7 +19,7 @@ def validate_create_inputs(displayname: str, description: str | None = None, loc
     Returns a list of errors (see docstring for `create()`), or an empty list if no issues were found.
     """
     errors = []
-    if not displayname:
+    if not displayname.strip():
         errors.append({"field": "displayname", "description": "You must enter a display name."})
     if len(displayname) > 255:
         errors.append({"field": "displayname", "description": "Display name must be less than 256 characters long."})
@@ -32,9 +37,13 @@ def create_event(displayname: str, description: str | None = None, location: dic
     """
     assert isinstance(g.conn, psycopg.Connection)
     assert isinstance(g.userid, int)
+    emb_str = displayname.strip().replace("\n", " ")
+    if description is not None:
+        emb_str += " " + description.strip().replace("\n", " ")
+    embedding = emb.get_embedding(emb_str, engine="text-embedding-ada-002", user=str(g.userid))
     with g.conn.cursor() as cur:
-        cur.execute("INSERT INTO events(displayname, description, host) VALUES (%s, %s, %s) RETURNING id;", 
-                    (displayname, description if description is not None else "", g.userid))
+        cur.execute("INSERT INTO events(displayname, description, host, embedding) VALUES (%s, %s, %s, %s) RETURNING id;", 
+                    (displayname, description if description is not None else "", g.userid, embedding))
         id, = cur.fetchone()
         if location is not None:
             coords = Point(float(location["lat"]), float(location["lon"]))
@@ -356,10 +365,10 @@ def update_event_settings(eventid: int, **kwargs) -> Response:
     assert isinstance(g.conn, psycopg.Connection)
     assert isinstance(g.userid, int)
     with g.conn.cursor() as cur:
-        cur.execute("SELECT host, displayname, description, coords FROM events WHERE id = %s;", (eventid,))
+        cur.execute("SELECT host, displayname, description, coords, embedding FROM events WHERE id = %s;", (eventid,))
         if cur.rowcount == 0:
             abort(404)
-        host, displayname, description, coords = cur.fetchone()
+        host, displayname, description, coords, embedding = cur.fetchone()
         location = None
         if coords is not None:
             assert isinstance(coords, Point)
@@ -377,8 +386,12 @@ def update_event_settings(eventid: int, **kwargs) -> Response:
         errors = validate_create_inputs(displayname, description, location)
         if errors:
             return (errors, 422)
-        cur.execute("UPDATE events SET displayname = %s, description = %s, coords = %s WHERE id = %s;",
-                    (displayname, description if description is not None else "", coords, eventid))
+        if "displayname" in kwargs or "description" in kwargs:
+            assert isinstance(displayname, str)
+            assert isinstance(description, str)
+            embedding = emb.get_embedding(displayname.strip().replace("\n", " ") + " " + description.strip().replace("\n", " "), engine="text-embedding-ada-002", user=str(g.userid))
+        cur.execute("UPDATE events SET displayname = %s, description = %s, coords = %s, embedding = %s WHERE id = %s;",
+                    (displayname, description if description is not None else "", coords, eventid, embedding))
         return ("", 204)
 
 @bp.route("/<int:eventid>", methods=["PATCH"])
@@ -650,17 +663,47 @@ def get_events_by_location(location: Point, distance: float) -> list:
         events.sort(key=lambda x: x["distance"])
         return events
 
+def get_events_by_keyword(query: str, location: Point | None = None, distance: float = float("inf")):
+    """
+    List all events not more than `distance` miles from `location`, sorted by relevance to the given query/keyword.
+    """
+    assert isinstance(g.conn, psycopg.Connection)
+    assert isinstance(g.userid, int)
+    if not query.strip():
+        abort(400)
+    with g.conn.cursor() as cur:
+        events = []
+        cur.execute("SELECT id, displayname, coords, embedding FROM events;")
+        for row in cur:
+            id, dname, evloc, evemb = row
+            if location is None or evloc is not None and location.distanceto(evloc) <= distance:
+                events.append({"id": id, "displayname": dname, "embedding": evemb, "location": None})
+                if evloc is not None:
+                    events[-1]["location"] = {"lat": evloc.lat, "lon": evloc.lon}
+        if len(events) >= 2:
+            embedding = emb.get_embedding(query.strip().replace("\n", " "), engine="text-embedding-ada-002", user=str(g.userid))
+            events.sort(key=lambda x: -emb.cosine_similarity(embedding, x["embedding"]))
+        for i in range(len(events)):
+            events[i].pop("embedding")
+        return events
 
 @bp.route("/search", methods=["GET"])
 @authenticate
 def event_search():
     """
-    Search for an event given the user's coordinates.
+    Search for an event given the user's coordinates and/or a search query.
 
     Input: URL query arguments:
-        - `lat`: the user's latitude, as a decimal
-        - `lon`: the user's longitude, as a decimal
+        - `query` (optional): the search query
+        - `lat` (optional): the user's latitude, as a decimal
+        - `lon` (optional): the user's longitude, as a decimal
         - `radius` (optional): the search radius, in miles
+    
+    Input Requirements:
+        - Either `query` or `lat` and `lon` must be included (or all three).
+        - If `query` is included, it must not be empty.
+        - If `radius` is included without `lat` and `lon`, it will be ignored.
+        - `radius` must be nonnegative if it is included.
     
     Status Codes:
         - 401: Need to authenticate.
@@ -671,18 +714,24 @@ def event_search():
         - `id`: the database ID of the event
         - `displayname`: the display name of the event
         - `distance`: the distance of the event, in miles
-        - `location`: the location of the event:
+        - `location`: the location of the event (or null):
             - `lat`: the latitude
             - `lon`: the longitude
     """
-    if "lat" not in request.args or "lon" not in request.args:
-        abort(400)
-    try:
-        lat = float(request.args["lat"])
-        lon = float(request.args["lon"])
-        radius = float(request.args.get("radius", default="inf"))
-        if radius < 0:
+    if "lat" in request.args and "lon" in request.args:
+        try:
+            lat = float(request.args["lat"])
+            lon = float(request.args["lon"])
+            radius = float(request.args.get("radius", default="inf"))
+            if radius < 0:
+                abort(400)
+            if "query" in request.args:
+                return get_events_by_keyword(request.args["query"], Point(lat, lon), radius)
+            else:
+                return get_events_by_location(Point(lat, lon), radius)
+        except ValueError:
             abort(400)
-        return get_events_by_location(Point(lat, lon), radius)
-    except ValueError:
+    elif "query" in request.args:
+        return get_events_by_keyword(request.args["query"])
+    else:
         abort(400)
