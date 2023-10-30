@@ -673,10 +673,12 @@ def get_events_by_keyword(query: str, location: Point | None = None, distance: f
         cur.execute("SELECT id, displayname, coords, embedding FROM events;")
         for row in cur:
             id, dname, evloc, evemb = row
-            if location is None or evloc is not None and location.distanceto(evloc) <= distance:
-                events.append({"id": id, "displayname": dname, "embedding": evemb, "location": None})
+            if location is None or evloc is not None and location.distanceto(evloc).miles <= distance:
+                events.append({"id": id, "displayname": dname, "embedding": evemb, "location": None, "distance": None})
                 if evloc is not None:
                     events[-1]["location"] = {"lat": evloc.lat, "lon": evloc.lon}
+                    if location is not None:
+                        events[-1]["distance"] = location.distanceto(evloc).miles
         if len(events) >= 2:
             embedding = emb.get_embedding(query.strip().replace("\n", " "), engine="text-embedding-ada-002", user=str(g.userid))
             events.sort(key=lambda x: -emb.cosine_similarity(embedding, x["embedding"]))
@@ -710,7 +712,7 @@ def event_search():
     Output: a JSON array of events, in the following form, sorted by distance in ascending order:
         - `id`: the database ID of the event
         - `displayname`: the display name of the event
-        - `distance`: the distance of the event, in miles
+        - `distance`: the distance of the event, in miles (or null)
         - `location`: the location of the event (or null):
             - `lat`: the latitude
             - `lon`: the longitude
