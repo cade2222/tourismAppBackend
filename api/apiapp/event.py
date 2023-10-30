@@ -647,17 +647,25 @@ def get_events_by_location(location: Point, distance: float) -> list:
         events.sort(key=lambda x: x["distance"])
         return events
 
+def get_events_by_keyword(query: str, location: Point | None = None, distance: float = float("inf")):
+    pass
 
 @bp.route("/search", methods=["GET"])
 @authenticate
 def event_search():
     """
-    Search for an event given the user's coordinates.
+    Search for an event given the user's coordinates and/or a search query.
 
     Input: URL query arguments:
-        - `lat`: the user's latitude, as a decimal
-        - `lon`: the user's longitude, as a decimal
+        - `query` (optional): the search query
+        - `lat` (optional): the user's latitude, as a decimal
+        - `lon` (optional): the user's longitude, as a decimal
         - `radius` (optional): the search radius, in miles
+    
+    Input Requirements:
+        - Either `query` or `lat` and `lon` must be included (or all three).
+        - If `radius` is included without `lat` and `lon`, it will be ignored.
+        - `radius` must be nonnegative if it is included.
     
     Status Codes:
         - 401: Need to authenticate.
@@ -668,18 +676,22 @@ def event_search():
         - `id`: the database ID of the event
         - `displayname`: the display name of the event
         - `distance`: the distance of the event, in miles
-        - `location`: the location of the event:
+        - `location`: the location of the event (or null):
             - `lat`: the latitude
             - `lon`: the longitude
     """
-    if "lat" not in request.args or "lon" not in request.args:
-        abort(400)
-    try:
-        lat = float(request.args["lat"])
-        lon = float(request.args["lon"])
-        radius = float(request.args.get("radius", default="inf"))
-        if radius < 0:
+    if "lat" in request.args and "lon" in request.args:
+        try:
+            lat = float(request.args["lat"])
+            lon = float(request.args["lon"])
+            radius = float(request.args.get("radius", default="inf"))
+            if radius < 0:
+                abort(400)
+            if "query" not in request.args:
+                return get_events_by_location(Point(lat, lon), radius)
+            else:
+                return get_events_by_keyword(request["query"], Point(lat, lon), radius)
+        except ValueError:
             abort(400)
-        return get_events_by_location(Point(lat, lon), radius)
-    except ValueError:
-        abort(400)
+    elif "query" in request.args:
+        return get_events_by_keyword(request["query"])
