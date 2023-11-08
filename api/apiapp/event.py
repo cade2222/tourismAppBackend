@@ -5,7 +5,7 @@ from .location import Point
 from time import sleep
 import openai
 import openai.embeddings_utils as emb
-from datetime import datetime
+from datetime import datetime, timedelta
 
 bp = Blueprint("event", __name__, url_prefix="/event")
 
@@ -744,26 +744,34 @@ def chat_delete(eventid: int, time: int):
     return delete_message(eventid, time)
 
 
-def get_events_by_location(location: Point, distance: float) -> list:
+def get_events_by_location(location: Point, distance: float, earliest: datetime | None = None, latest: datetime | None = None) -> list:
     """
     List all events not more than `distance` miles from `location`, sorted by distance in ascending order.
+
+    If `earliest` or `latest` are given, the results are constrained to these boundaries.
     """
     assert isinstance(g.conn, psycopg.Connection)
     with g.conn.cursor() as cur:
         events = []
-        cur.execute("SELECT id, displayname, coords FROM events WHERE coords IS NOT NULL;")
+        cur.execute("SELECT id, displayname, coords, start, \"end\" FROM events WHERE coords IS NOT NULL;")
         for row in cur:
-            id, dname, evloc = row
+            id, dname, evloc, start, end = row
+            if earliest is not None and start < earliest:
+                continue
+            if latest is not None and end > latest:
+                continue
             assert isinstance(evloc, Point)
             dist = location.distanceto(evloc)
             if dist.miles <= distance:
-                events.append({"id": id, "displayname": dname, "distance": dist.miles, "location": {"lat": evloc.lat, "lon": evloc.lon}})
+                events.append({"id": id, "displayname": dname, "distance": dist.miles, "location": {"lat": evloc.lat, "lon": evloc.lon}, "start": from_datetime(start), "end": from_datetime(end)})
         events.sort(key=lambda x: x["distance"])
         return events
 
-def get_events_by_keyword(query: str, location: Point | None = None, distance: float = float("inf")):
+def get_events_by_keyword(query: str, earliest: datetime | None = None, latest: datetime | None = None, location: Point | None = None, distance: float = float("inf")):
     """
     List all events not more than `distance` miles from `location`, sorted by relevance to the given query/keyword.
+
+    If `earliest` or `latest` are given, the results are constrained to these boundaries.
     """
     assert isinstance(g.conn, psycopg.Connection)
     assert isinstance(g.userid, int)
@@ -771,11 +779,15 @@ def get_events_by_keyword(query: str, location: Point | None = None, distance: f
         abort(400)
     with g.conn.cursor() as cur:
         events = []
-        cur.execute("SELECT id, displayname, coords, embedding FROM events;")
+        cur.execute("SELECT id, displayname, coords, embedding, start, \"end\" FROM events;")
         for row in cur:
-            id, dname, evloc, evemb = row
+            id, dname, evloc, evemb, start, end = row
+            if earliest is not None and start < earliest:
+                continue
+            if latest is not None and end > latest:
+                continue
             if location is None or evloc is not None and location.distanceto(evloc).miles <= distance:
-                events.append({"id": id, "displayname": dname, "embedding": evemb, "location": None, "distance": None})
+                events.append({"id": id, "displayname": dname, "embedding": evemb, "location": None, "distance": None, "start": from_datetime(start), "end": from_datetime(end)})
                 if evloc is not None:
                     events[-1]["location"] = {"lat": evloc.lat, "lon": evloc.lon}
                     if location is not None:
@@ -795,6 +807,8 @@ def event_search():
 
     Input: URL query arguments:
         - `query` (optional): the search query
+        - `ey`, `em`, `ed` (optional): the earliest date for which to return results
+        - `ly`, `lm`, `ld` (optional): the latest date for which to return results
         - `lat` (optional): the user's latitude, as a decimal
         - `lon` (optional): the user's longitude, as a decimal
         - `radius` (optional): the search radius, in miles
@@ -814,10 +828,34 @@ def event_search():
         - `id`: the database ID of the event
         - `displayname`: the display name of the event
         - `distance`: the distance of the event, in miles (or null)
+        - `start`, `end`: the start/end datetimes of the event
         - `location`: the location of the event (or null):
             - `lat`: the latitude
             - `lon`: the longitude
     """
+    startdt = enddt = None
+    if "ey" in request.args:
+        try:
+            startdt = to_datetime({"year": request.args["ey"], "month": request.args.get("em", 1), "day": 1 if "em" not in request.args else request.args.get("ed", 1)})
+        except ValueError:
+            abort(400)
+    if "ly" in request.args:
+        try:
+            year = int(request.args["ly"])
+            month = int(request.args.get("lm", 12))
+            day = None
+            if "lm" in request.args and "ld" in request.args:
+                day = int(request.args["ld"])
+            else:
+                nextday = None
+                if month == 12:
+                    day = 31
+                else:
+                    nextday = datetime(year, month + 1, 1)
+                    day = (nextday - timedelta(days=1)).day
+            enddt = to_datetime({"year": year, "month": month, "day": day}, end=True)
+        except ValueError:
+            abort(400)
     if "lat" in request.args and "lon" in request.args:
         try:
             lat = float(request.args["lat"])
@@ -826,12 +864,12 @@ def event_search():
             if radius < 0:
                 abort(400)
             if "query" in request.args:
-                return get_events_by_keyword(request.args["query"], Point(lat, lon), radius)
+                return get_events_by_keyword(request.args["query"], startdt, enddt, Point(lat, lon), radius)
             else:
-                return get_events_by_location(Point(lat, lon), radius)
+                return get_events_by_location(Point(lat, lon), radius, startdt, enddt)
         except ValueError:
             abort(400)
     elif "query" in request.args:
-        return get_events_by_keyword(request.args["query"])
+        return get_events_by_keyword(request.args["query"], startdt, enddt)
     else:
         abort(400)
