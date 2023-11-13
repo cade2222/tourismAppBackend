@@ -166,15 +166,17 @@ def list_events():
     assert isinstance(g.conn, psycopg.Connection)
     assert isinstance(g.userid, int)
     with g.conn.cursor() as cur:
-        cur.execute("SELECT events.id, events.displayname, events.start, events.\"end\", events.description FROM (attendees JOIN events ON attendees.eventid = events.id) WHERE userid = %s;",
+        cur.execute("SELECT events.id, events.displayname, events.start, events.\"end\", events.description, places.name, places.address, places.coords FROM ((attendees JOIN events ON attendees.eventid = events.id) JOIN places ON events.place = places.id) WHERE attendees.userid = %s;",
                     (g.userid,))
         for row in cur:
-            id, dname, start, end, description = row
-            attending.append({"id": id, "displayname": dname, "start": from_datetime(start), "end": from_datetime(end), "description": description})
-        cur.execute("SELECT id, displayname, start, \"end\", description FROM events WHERE host = %s;", (g.userid,))
+            id, dname, start, end, description, pname, addr, coords = row
+            assert isinstance(coords, Point)
+            attending.append({"id": id, "displayname": dname, "start": from_datetime(start), "end": from_datetime(end), "description": description, "venue": pname, "address": addr, "coords": {"lat": coords.lat, "lon": coords.lon}})
+        cur.execute("SELECT events.id, events.displayname, events.start, events.\"end\", events.description, places.name, places.address, places.coords FROM (events JOIN places ON events.place = places.id) WHERE host = %s;", (g.userid,))
         for row in cur:
-            id, dname, start, end, description = row
-            hosting.append({"id": id, "displayname": dname, "start": from_datetime(start), "end": from_datetime(end), "description": description})
+            id, dname, start, end, description, pname, addr, coords = row
+            assert isinstance(coords, Point)
+            hosting.append({"id": id, "displayname": dname, "start": from_datetime(start), "end": from_datetime(end), "description": description, "venue": pname, "address": addr, "coords": {"lat": coords.lat, "lon": coords.lon}})
     return {"attending": attending, "hosting": hosting}
 
 @bp.route("", methods=["GET"])
@@ -199,6 +201,11 @@ def event_list():
                 - `year`, `month`, `day`
                 - `hour`, `minute`
             - `description`: the description of the event
+            - `venue`: the name of the event's venue, or null
+            - `address`: the address of the event's venue
+            - `coords`: the coordinates of the event's venue, with the following properties:
+                - `lat`: latitude
+                - `lon`: longitude
         - `hosting`: a list of events that the user is hosting, with events in the same form as those in `attending`.
     """
     return list_events()
@@ -216,18 +223,16 @@ def get_event_info(id: int) -> dict:
     assert isinstance(g.userid, int)
     info = None
     with g.conn.cursor() as cur:
-        cur.execute("SELECT displayname, start, \"end\", description, host, coords FROM events WHERE id = %s;", (id,))
+        cur.execute("SELECT events.displayname, events.start, events.\"end\", events.description, events.host, places.name, places.address, places.coords FROM (events JOIN places ON events.place = places.id) WHERE events.id = %s;", (id,))
         if cur.rowcount == 0:
             return None
-        name, start, end, description, host, location = cur.fetchone()
-        info = {"displayname": name, "start": from_datetime(start), "end": from_datetime(end), "description": description, "host": {"id": host}, "location": None, "attendees": [], "attending": False}
+        name, start, end, description, host, pname, addr, coords = cur.fetchone()
+        assert isinstance(coords, Point)
+        info = {"displayname": name, "start": from_datetime(start), "end": from_datetime(end), "description": description, "host": {"id": host}, "venue": pname, "address": addr, "coords": {"lat": coords.lat, "lon": coords.lon}, "attendees": [], "attending": False}
         cur.execute("SELECT username, displayname FROM users WHERE id = %s;", (host,))
         uname, udname = cur.fetchone()
         info["host"]["username"] = uname
         info["host"]["displayname"] = udname
-        if location is not None:
-            assert isinstance(location, Point)
-            info["location"] = {"lat": location.lat, "lon": location.lon}
         cur.execute("SELECT attendees.userid, users.username, users.displayname FROM (attendees JOIN users ON users.id = attendees.userid) WHERE eventid = %s;", (id,))
         for row in cur:
             uid, uname, udname = row
@@ -255,9 +260,11 @@ def event_get(eventid: int) -> Response:
         - `start`, `end`: the start and end datetimes of the event, as objects with the following integer attributes:
             - `year`, `month`, `day`
             - `hour`, `minute`
-        - `location`: a JSON object containing the coordinates of the event, or null
-            - `lat`: the latitude of the event
-            - `lon`: the longitude of the event
+        - `venue`: the name of the event's venue, or null
+        - `address`: the address of the event's venue
+        - `coords`: the coordinates of the event's venue, with the following properties:
+            - `lat`: latitude
+            - `lon`: longitude
         - `attendees`: an array of users attending the event, each in the following format:
             - `id`: the user's ID
             - `username`: the user's username
