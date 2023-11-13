@@ -69,14 +69,11 @@ def create_event(displayname: str, start: dict, end: dict, location: str, descri
         emb_str += " " + placename.strip().replace("\n", " ")
     embedding = emb.get_embedding(emb_str, engine="text-embedding-ada-002", user=str(g.userid))
     with g.conn.cursor() as cur:
-        cur.execute("INSERT INTO events(displayname, start, \"end\", location, host, embedding) VALUES (%s, %s, %s, %s, %s) RETURNING id;", 
+        cur.execute("INSERT INTO events(displayname, start, \"end\", place, host, embedding) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id;", 
                     (displayname, to_datetime(start), to_datetime(end, end=True), location, g.userid, embedding))
         id, = cur.fetchone()
         if description is not None:
             cur.execute("UPDATE events SET description = %s WHERE id = %s;", (description, id))
-        if location is not None:
-            coords = Point(float(location["lat"]), float(location["lon"]))
-            cur.execute("UPDATE events SET coords = %s WHERE id = %s;", (coords, id))
         return id
 
 @bp.route("", methods=["POST"])
@@ -453,8 +450,8 @@ def update_event_settings(eventid: int, **kwargs) -> Response:
             assert isinstance(description, str)
             placename, _, _ = get_place_info(location)
             embedding = emb.get_embedding(displayname.strip().replace("\n", " ") + " " + description.strip().replace("\n", " ") + (placename.strip().replace("\n", " ") if placename is not None else ""), engine="text-embedding-ada-002", user=str(g.userid))
-        cur.execute("UPDATE events SET displayname = %s, start=%s, \"end\"=%s, description = %s, location = %s, embedding = %s WHERE id = %s;",
-                    (displayname, start, end, description if description is not None else "", location, eventid, embedding))
+        cur.execute("UPDATE events SET displayname = %s, start=%s, \"end\"=%s, description = %s, place = %s, embedding = %s WHERE id = %s;",
+                    (displayname, start, end, description if description is not None else "", location, embedding, eventid))
         return ("", 204)
 
 @bp.route("/<int:eventid>", methods=["PATCH"])

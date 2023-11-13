@@ -33,8 +33,8 @@ class Point:
                 id = i["place_id"]
                 addr = i["formatted_address"]
                 coords = i["geometry"]["location"]
-                lat = int(coords["lat"])
-                lon = int(coords["lng"])
+                lat = float(coords["lat"])
+                lon = float(coords["lng"])
                 loc = Point(lat, lon)
                 cur.execute("SELECT COUNT(*) FROM places WHERE id = %s;", (id,))
                 count, = cur.fetchone()
@@ -63,14 +63,14 @@ def get_place_info(placeid: str) -> tuple[str | None, str, Point] | None:
         if response:
             addr = response[0]["formatted_address"]
             coords = response[0]["geometry"]["location"]
-            lat = int(coords["lat"])
-            lon = int(coords["lng"])
+            lat = float(coords["lat"])
+            lon = float(coords["lng"])
             loc = Point(lat, lon)
-            cur.execute("INSERT INTO places(id, address, coords) VALUES (%s, %s, %s, %s);", (placeid, addr, loc))
+            cur.execute("INSERT INTO places(id, address, coords) VALUES (%s, %s, %s);", (placeid, addr, loc))
             name = None
             if "point_of_interest" in response[0]["types"]:
-                name = googlemaps.places.place(client=g.gmaps, place_id=id, fields=["name"])["result"]["name"]
-                cur.execute("UPDATE places SET name = %s WHERE id = %s;", (name, id))
+                name = googlemaps.places.place(client=g.gmaps, place_id=placeid, fields=["name"])["result"]["name"]
+                cur.execute("UPDATE places SET name = %s WHERE id = %s;", (name, placeid))
                 for t in response[0]["types"]:
                     cur.execute("INSERT INTO placetypes(id, type) VALUES (%s, %s);", (placeid, t))
             return (name, addr, loc)
