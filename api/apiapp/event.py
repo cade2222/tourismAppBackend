@@ -1,7 +1,7 @@
 from flask import Blueprint, request, g, abort, Response
 import psycopg
 from .auth import authenticate
-from .location import Point
+from .location import Point, get_place_info
 from time import sleep
 import openai
 import openai.embeddings_utils as emb
@@ -26,7 +26,7 @@ def from_datetime(dt: datetime):
         "minute": dt.minute
     }
 
-def validate_create_inputs(displayname: str, start: dict, end: dict, description: str | None = None, location: dict | None = None, **kwargs) -> list:
+def validate_create_inputs(displayname: str, start: dict, end: dict, location: str, description: str | None = None, **kwargs):
     """
     Ensures the given event information is valid.
 
@@ -50,13 +50,12 @@ def validate_create_inputs(displayname: str, start: dict, end: dict, description
         errors.append({"field": "end", "description": "Not a valid date."})
     if startdt is not None and enddt is not None and startdt > enddt:
         errors.append({"field": "end", "description": "End date cannot be earlier than start date."})
-    if location is not None and not -90.0 <= float(location["lat"]) <= 90.0:
-        errors.append({"field": "location", "description": "Latitude must be between -90 and 90 degrees."})
-    if location is not None and not -180.0 <= float(location["lon"]) <= 180.0:
-        errors.append({"field": "location", "description": "Longitude must be between -180 and 180 degrees."})
+    if not errors:
+        if get_place_info(location) is None:
+            errors.append({"field": "location", "description": "Must be a valid Place ID."})
     return errors
 
-def create_event(displayname: str, start: dict, end: dict, description: str | None = None, location: dict | None = None, **kwargs) -> int:
+def create_event(displayname: str, start: dict, end: dict, location: str, description: str | None = None, **kwargs) -> int:
     """
     Adds an event with the given information to the database.
     """
@@ -67,8 +66,8 @@ def create_event(displayname: str, start: dict, end: dict, description: str | No
         emb_str += " " + description.strip().replace("\n", " ")
     embedding = emb.get_embedding(emb_str, engine="text-embedding-ada-002", user=str(g.userid))
     with g.conn.cursor() as cur:
-        cur.execute("INSERT INTO events(displayname, start, \"end\", host, embedding) VALUES (%s, %s, %s, %s) RETURNING id;", 
-                    (displayname, to_datetime(start), to_datetime(end, end=True), g.userid, embedding))
+        cur.execute("INSERT INTO events(displayname, start, \"end\", location, host, embedding) VALUES (%s, %s, %s, %s, %s) RETURNING id;", 
+                    (displayname, to_datetime(start), to_datetime(end, end=True), location, g.userid, embedding))
         id, = cur.fetchone()
         if description is not None:
             cur.execute("UPDATE events SET description = %s WHERE id = %s;", (description, id))
@@ -89,16 +88,15 @@ def create() -> Response:
         - `start`, `end`: the start and end datetimes of the event, as objects with the following integer attributes:
             - `year`, `month`, `day`
             - `hour`, `minute`
-        - `location` (optional): a JSON object containing the coordinates of the event
-            - `lat`: the latitude, in degrees
-            - `lon`: the longitude, in degrees
+        - `location`: the Google Place ID of the event's venue
     
     The input data must meet the following requirements:
         - `displayname` must not be empty.
         - `displayname` must contain no more than 255 characters.
         - `description` must contain no more than 10000 characters.
-        - `location.lat` must be between -90 and 90, inclusive
-        - `location.lon` must be between -180 and 180, inclusive
+        - `start` and `end` must be valid datetimes.
+        - `end` cannot come before `start`.
+        - `location` must be a valid Place ID.
     
     The following status codes will be returned:
         - 401: Need to authenticate.
@@ -123,6 +121,8 @@ def create() -> Response:
     if "description" in request.json and request.json["description"] is not None \
         and not isinstance(request.json["description"], str):
         abort(400)
+    if "location" not in request.json or not isinstance(request.json["location"], str):
+        abort(400)
     if "start" not in request.json or not isinstance(request.json["start"], dict):
         abort(400)
     if "year" not in request.json["start"] or "month" not in request.json["start"] or "day" not in request.json["start"] \
@@ -146,16 +146,6 @@ def create() -> Response:
         _ = int(request.json["end"].get("minute", 0))
     except ValueError:
         abort(400)
-    if "location" in request.json and request.json["location"] is not None:
-        if not isinstance(request.json["location"], dict):
-            abort(400)
-        if "lat" not in request.json["location"] or "lon" not in request.json["location"]:
-            abort(400)
-        try:
-            _ = float(request.json["location"]["lat"])
-            _ = float(request.json["location"]["lon"])
-        except ValueError:
-            abort(400)
     errors = validate_create_inputs(**request.json)
     if errors:
         return (errors, 422)
@@ -429,14 +419,10 @@ def update_event_settings(eventid: int, **kwargs) -> Response:
     assert isinstance(g.conn, psycopg.Connection)
     assert isinstance(g.userid, int)
     with g.conn.cursor() as cur:
-        cur.execute("SELECT host, displayname, description, coords, embedding FROM events WHERE id = %s;", (eventid,))
+        cur.execute("SELECT host, displayname, start, end, location, description, embedding FROM events WHERE id = %s;", (eventid,))
         if cur.rowcount == 0:
             abort(404)
-        host, displayname, description, coords, embedding = cur.fetchone()
-        location = None
-        if coords is not None:
-            assert isinstance(coords, Point)
-            location = {"lat": coords.lat, "lon": coords.lon}
+        host, displayname, start, end, location, description, embedding = cur.fetchone()
         if g.userid != host:
             abort(403)
         if "displayname" in kwargs:
@@ -449,8 +435,6 @@ def update_event_settings(eventid: int, **kwargs) -> Response:
             description = kwargs["description"]
         if "location" in kwargs:
             location = kwargs["location"]
-            if location is not None:
-                coords = Point(float(location["lat"]), float(location["lon"]))
         errors = validate_create_inputs(displayname, start, end, description, location)
         if errors:
             return (errors, 422)
@@ -458,8 +442,8 @@ def update_event_settings(eventid: int, **kwargs) -> Response:
             assert isinstance(displayname, str)
             assert isinstance(description, str)
             embedding = emb.get_embedding(displayname.strip().replace("\n", " ") + " " + description.strip().replace("\n", " "), engine="text-embedding-ada-002", user=str(g.userid))
-        cur.execute("UPDATE events SET displayname = %s, start=%s, \"end\"=%s, description = %s, coords = %s, embedding = %s WHERE id = %s;",
-                    (displayname, start, end, description if description is not None else "", coords, eventid, embedding))
+        cur.execute("UPDATE events SET displayname = %s, start=%s, \"end\"=%s, description = %s, location = %s, embedding = %s WHERE id = %s;",
+                    (displayname, start, end, description if description is not None else "", location, eventid, embedding))
         return ("", 204)
 
 @bp.route("/<int:eventid>", methods=["PATCH"])
@@ -475,9 +459,7 @@ def event_patch(eventid: int):
         - `start`, `end`: the start and end datetimes, with the following integer attributes:
             - `year`, `month`, `day`
             - `hour`, `minute` (optional)
-        - `location`: a JSON object containing the coordinates of the event, or NULL
-            - `lat`: the latitude, in degrees
-            - `lon`: the longitude, in degrees
+        - `location`: the Google Place ID of the event's venue.
     
     The validation requirements are the same as those for the "/event" creation hook (see docstring for `create()`).
     
@@ -531,16 +513,8 @@ def event_patch(eventid: int):
     if "description" in request.json and request.json["description"] is not None \
         and not isinstance(request.json["description"], str):
         abort(400)
-    if "location" in request.json and request.json["location"] is not None:
-        if not isinstance(request.json["location"], dict):
-            abort(400)
-        if "lat" not in request.json["location"] or "lon" not in request.json["location"]:
-            abort(400)
-        try:
-            _ = float(request.json["location"]["lat"])
-            _ = float(request.json["location"]["lon"])
-        except ValueError:
-            abort(400)
+    if "location" not in request.json or not isinstance(request.json["location"], str):
+        abort(400)
     if "eventid" in request.json:
         abort(400)
     return update_event_settings(eventid = eventid, **request.json)
