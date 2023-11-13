@@ -64,6 +64,9 @@ def create_event(displayname: str, start: dict, end: dict, location: str, descri
     emb_str = displayname.strip().replace("\n", " ")
     if description is not None:
         emb_str += " " + description.strip().replace("\n", " ")
+    placename, _, _ = get_place_info(location)
+    if placename is not None:
+        emb_str += " " + placename.strip().replace("\n", " ")
     embedding = emb.get_embedding(emb_str, engine="text-embedding-ada-002", user=str(g.userid))
     with g.conn.cursor() as cur:
         cur.execute("INSERT INTO events(displayname, start, \"end\", location, host, embedding) VALUES (%s, %s, %s, %s, %s) RETURNING id;", 
@@ -448,7 +451,8 @@ def update_event_settings(eventid: int, **kwargs) -> Response:
         if "displayname" in kwargs or "description" in kwargs:
             assert isinstance(displayname, str)
             assert isinstance(description, str)
-            embedding = emb.get_embedding(displayname.strip().replace("\n", " ") + " " + description.strip().replace("\n", " "), engine="text-embedding-ada-002", user=str(g.userid))
+            placename, _, _ = get_place_info(location)
+            embedding = emb.get_embedding(displayname.strip().replace("\n", " ") + " " + description.strip().replace("\n", " ") + (placename.strip().replace("\n", " ") if placename is not None else ""), engine="text-embedding-ada-002", user=str(g.userid))
         cur.execute("UPDATE events SET displayname = %s, start=%s, \"end\"=%s, description = %s, location = %s, embedding = %s WHERE id = %s;",
                     (displayname, start, end, description if description is not None else "", location, eventid, embedding))
         return ("", 204)
@@ -734,17 +738,17 @@ def get_events_by_location(location: Point, distance: float, earliest: datetime 
     assert isinstance(g.conn, psycopg.Connection)
     with g.conn.cursor() as cur:
         events = []
-        cur.execute("SELECT id, displayname, coords, start, \"end\" FROM events WHERE coords IS NOT NULL;")
+        cur.execute("SELECT events.id, events.displayname, events.start, events.\"end\", events.description, places.name, places.address, places.coords FROM (events JOIN places ON events.place = places.id);")
         for row in cur:
-            id, dname, evloc, start, end = row
+            id, dname, start, end, description, pname, addr, coords = row
             if earliest is not None and start < earliest:
                 continue
             if latest is not None and end > latest:
                 continue
-            assert isinstance(evloc, Point)
-            dist = location.distanceto(evloc)
+            assert isinstance(coords, Point)
+            dist = location.distanceto(coords)
             if dist.miles <= distance:
-                events.append({"id": id, "displayname": dname, "distance": dist.miles, "location": {"lat": evloc.lat, "lon": evloc.lon}, "start": from_datetime(start), "end": from_datetime(end)})
+                events.append({"id": id, "displayname": dname, "distance": dist.miles, "coords": {"lat": coords.lat, "lon": coords.lon}, "start": from_datetime(start), "end": from_datetime(end), "venue": pname, "address": addr, "description": description})
         events.sort(key=lambda x: x["distance"])
         return events
 
@@ -760,19 +764,18 @@ def get_events_by_keyword(query: str, earliest: datetime | None = None, latest: 
         abort(400)
     with g.conn.cursor() as cur:
         events = []
-        cur.execute("SELECT id, displayname, coords, embedding, start, \"end\" FROM events;")
+        cur.execute("SELECT events.id, events.displayname, events.embedding, events.start, events.\"end\", events.description, places.name, places.address, places.coords FROM (events JOIN places ON events.place = places.id);")
         for row in cur:
-            id, dname, evloc, evemb, start, end = row
+            id, dname, evemb, start, end, description, pname, addr, coords = row
             if earliest is not None and start < earliest:
                 continue
             if latest is not None and end > latest:
                 continue
-            if location is None or evloc is not None and location.distanceto(evloc).miles <= distance:
-                events.append({"id": id, "displayname": dname, "embedding": evemb, "location": None, "distance": None, "start": from_datetime(start), "end": from_datetime(end)})
-                if evloc is not None:
-                    events[-1]["location"] = {"lat": evloc.lat, "lon": evloc.lon}
-                    if location is not None:
-                        events[-1]["distance"] = location.distanceto(evloc).miles
+            if location is not None and location.distanceto(coords).miles > distance:
+                continue
+            events.append({"id": id, "displayname": dname, "description": description, "venue": pname, "address": addr, "coords": coords, "embedding": evemb, "distance": None, "start": from_datetime(start), "end": from_datetime(end)})
+            if location is not None:
+                events[-1]["distance"] = location.distanceto(coords).miles
         if len(events) >= 2:
             embedding = emb.get_embedding(query.strip().replace("\n", " "), engine="text-embedding-ada-002", user=str(g.userid))
             events.sort(key=lambda x: -emb.cosine_similarity(embedding, x["embedding"]))
@@ -792,7 +795,7 @@ def event_search():
         - `ly`, `lm`, `ld` (optional): the latest date for which to return results
         - `lat` (optional): the user's latitude, as a decimal
         - `lon` (optional): the user's longitude, as a decimal
-        - `radius` (optional): the search radius, in miles
+        - `radius` (optional): the maximum search radius, in miles
     
     Input Requirements:
         - Either `query` or `lat` and `lon` must be included (or all three).
@@ -806,13 +809,18 @@ def event_search():
         - 200: Request successful.
     
     Output: a JSON array of events, in the following form, sorted by distance in ascending order:
-        - `id`: the database ID of the event
+        - `id`: the event's ID
         - `displayname`: the display name of the event
-        - `distance`: the distance of the event, in miles (or null)
-        - `start`, `end`: the start/end datetimes of the event
-        - `location`: the location of the event (or null):
-            - `lat`: the latitude
-            - `lon`: the longitude
+        - `description`: the description of the event
+        - `start`, `end`: the start and end datetimes of the event, as objects with the following integer attributes:
+            - `year`, `month`, `day`
+            - `hour`, `minute`
+        - `venue`: the name of the event's venue, or null
+        - `address`: the address of the event's venue
+        - `coords`: the coordinates of the event's venue, with the following properties:
+            - `lat`: latitude
+            - `lon`: longitude
+        - `distance`: if `lat` and `lon` were provided, the distance, in miles, to the event
     """
     startdt = enddt = None
     if "ey" in request.args:
