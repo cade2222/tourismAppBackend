@@ -738,9 +738,9 @@ def get_events_by_location(location: Point, distance: float, earliest: datetime 
         cur.execute("SELECT events.id, events.displayname, events.start, events.\"end\", events.description, places.name, places.address, places.coords FROM (events JOIN places ON events.place = places.id);")
         for row in cur:
             id, dname, start, end, description, pname, addr, coords = row
-            if earliest is not None and start < earliest:
+            if earliest is not None and end < earliest:
                 continue
-            if latest is not None and end > latest:
+            if latest is not None and start > latest:
                 continue
             assert isinstance(coords, Point)
             dist = location.distanceto(coords)
@@ -764,9 +764,9 @@ def get_events_by_keyword(query: str, earliest: datetime | None = None, latest: 
         cur.execute("SELECT events.id, events.displayname, events.embedding, events.start, events.\"end\", events.description, places.name, places.address, places.coords FROM (events JOIN places ON events.place = places.id);")
         for row in cur:
             id, dname, evemb, start, end, description, pname, addr, coords = row
-            if earliest is not None and start < earliest:
+            if earliest is not None and end < earliest:
                 continue
-            if latest is not None and end > latest:
+            if latest is not None and start > latest:
                 continue
             if location is not None and location.distanceto(coords).miles > distance:
                 continue

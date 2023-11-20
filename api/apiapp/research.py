@@ -8,6 +8,18 @@ import psycopg
 
 bp = Blueprint("research", __name__, url_prefix="/research")
 
+@bp.route("/placetypes", methods=["GET"])
+@authenticate
+def get_place_types():
+    assert isinstance(g.conn, psycopg.Connection)
+    with g.conn.cursor() as cur:
+        types = []
+        cur.execute("SELECT DISTINCT type FROM placetypes;")
+        for row in cur:
+            t, = row
+            types.append(t)
+        return types
+
 def get_event_name(eventid: int) -> str | None:
     assert isinstance(g.conn, psycopg.Connection)
     with g.conn.cursor() as cur:
