@@ -1,34 +1,28 @@
-<link rel="stylesheet" type="text/css" href="style.css">
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>ExploreCity Researcher Portal</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Include the styles.css file -->
-    <link rel="stylesheet" type="text/css" href="styles.css">
+    <link rel="stylesheet" type="text/css" href="style.css">
 </head>
 <body>
-    <h1>ExploreCity Researcher Portal</h1>
-    <p>Researchers will sign in here to manage the data collected from ExploreCity.</p>
+    <h1>ExploreCity Researcher Login</h1>
 
-    <!-- Login Form -->
-    <form class="login-form">
+    <form class="login-form" onsubmit="submitForm(); return false;">
         <h2>Login</h2>
+
         <label for="loginUsername">Username:</label>
         <input type="text" id="loginUsername" name="loginUsername" required>
 
         <label for="loginPassword">Password:</label>
         <input type="password" id="loginPassword" name="loginPassword" required>
 
-        <button type="submit">Login</button>
+        <button type="submit" class="account-button">Login</button>
+
+        <a href="createAccount.html" class="account-button">Create Account</a>
     </form>
 
-    <!-- Create Account Button -->
-    <a href="createAccount.html" class="create-account-button">Create Account</a>
-
-    <p>ADD CONTENT HERE</p>
-    <p>HOWDY AGS</p>
+    <script src="script.js"></script>
 </body>
 </html>

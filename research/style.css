@@ -26,15 +26,37 @@ input {
     box-sizing: border-box;
 }
 
-button {
-    background-color: #4caf50;
-    color: #fff;
+#filter-container {
+    margin-bottom: 20px;
+}
+
+select, input {
+    height: 30px;
+    margin-right: 10px;
+    box-sizing: border-box;
+    margin-bottom: 5px;
+}
+
+.account-button {
+    width: 100%;
     padding: 10px;
+    height: 40px;
     border: none;
     border-radius: 5px;
     cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    text-align: center;
+    background-color: #45a049;
+    color: #fff;
+    font-size: 1em;
+    margin-bottom: 10px;
 }
 
-button:hover {
+.login-button:hover, .create-account-button:hover {
     background-color: #45a049;
+}
+
+h1 {
+    text-align: center; /* Center the text */
 }

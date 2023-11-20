@@ -1,12 +1,5 @@
 <link rel="stylesheet" type="text/css" href="style.css">
 
-
-Certainly! Below is a basic example of what your create_account.html file might look like. Customize it further based on your specific needs:
-
-create_account.html:
-
-html
-Copy code
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -21,6 +14,8 @@ Copy code
 
     <!-- Account Creation Form -->
     <form class="create-account-form">
+        <h2>Create an Account</h2>
+
         <label for="createUsername">Username:</label>
         <input type="text" id="createUsername" name="createUsername" required>
 
@@ -30,11 +25,8 @@ Copy code
         <label for="confirmPassword">Confirm Password:</label>
         <input type="password" id="confirmPassword" name="confirmPassword" required>
 
-        <button type="submit">Create Account</button>
+        <button type="submit" class="account-button">Create Account</button>
+        <a href="index.html" class="account-button">Back to Login</a>
     </form>
-
-    <p>Additional content specific to the Create Account page.</p>
-
-    <p>Back to <a href="index.html">Login</a></p>
 </body>
 </html>
