@@ -6,7 +6,7 @@ function compileData() {
   const endDate = document.getElementById("endDate").value;
 
   const dateTimeCell = document.getElementById("dateTimeCell");
-  const userIDCell = document.getElementById("userIDCell");
+  const locationNameCell = document.getElementById("locationNameCell");
   const cityCell = document.getElementById("cityCell");
   const locationCell = document.getElementById("locationCell");
 
@@ -15,7 +15,7 @@ function compileData() {
   const formattedTime = currentDate.toLocaleTimeString();
 
   dateTimeCell.innerHTML = `${formattedDate} ${formattedTime}`;
-  userIDCell.innerHTML = counter++;
+  locationNameCell.innerHTML = counter++;
   cityCell.innerHTML = city;
   locationCell.innerHTML = `${city} (${startDate} to ${endDate})`;
 }
