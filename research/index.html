@@ -1,22 +1,74 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <meta charset="UTF-8"/>
     <title>ExploreCity Researcher Portal</title>
-    <meta name="viewport" content="width=device-width,initial=scale=1.0"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <style type="text/css">
       body {
         font-family: -apple-system, "Segoe UI", "Roboto", Helvetica, sans-serif;
         font-size: 1.25em;
         background-color: #eee;
         min-height: 100%;
+        text-align: center;
+      }
+
+      table {
+        width: 80%;
+        margin: 20px auto;
+        border-collapse: collapse;
+      }
+
+      th, td {
+        padding: 12px;
+        border: 1px solid #ddd;
+      }
+
+      th {
+        background-color: #f2f2f2;
+      }
+
+      input, button {
+        padding: 10px;
+        margin: 5px;
+        font-size: 1em;
       }
     </style>
   </head>
   <body>
     <h1>ExploreCity Researcher Portal</h1>
-    <p>Researchers will sign in here to manage the data collected from ExploreCity.</p>
-    <p>Researchers will sign in here to manage the data collected from ExploreCity.</p>
-    <p>ADD CONTENT HERE</p>
+    <p>Researchers can manage the data collected from ExploreCity.</p>
+
+    <label for="city">City:</label>
+    <input type="text" id="city" placeholder="Enter City">
+
+    <label for="startDate">Start Date:</label>
+    <input type="date" id="startDate">
+
+    <label for="endDate">End Date:</label>
+    <input type="date" id="endDate">
+
+    <button onclick="compileData()">Compile</button>
+
+    <table id="dataTable">
+      <thead>
+        <tr>
+          <th>Date and Time</th>
+          <th>User ID</th>
+          <th>City</th>
+          <th>Location</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td id="dateTimeCell"></td>
+          <td id="userIDCell">1</td>
+          <td id="cityCell"></td>
+          <td id="locationCell"></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <script src="your_script.js"></script>
   </body>
 </html>
