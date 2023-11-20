@@ -6,10 +6,11 @@ def create_app() -> Flask:
     """
     app = Flask(__name__)
 
-    from . import auth, db, event, location
+    from . import auth, db, event, location, research
     app.register_blueprint(auth.bp)
     app.register_blueprint(db.bp)
     app.register_blueprint(event.bp)
     app.register_blueprint(location.bp)
+    app.register_blueprint(research.bp)
 
     return app
