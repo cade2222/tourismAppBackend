@@ -18,6 +18,7 @@ async function submitForm() {
     //   if (response.ok) {
     //     const data = await response.text();
     //     console.log("Authentication successful:", data);
+    //     window.location.href = "howdy.html";
     //   } else {
     //     console.error("Authentication failed:", response.status, response.statusText);
     //   }
