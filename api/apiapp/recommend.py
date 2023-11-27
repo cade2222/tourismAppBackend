@@ -1,7 +1,7 @@
 from flask import Blueprint, g, request, abort
 from .auth import authenticate
 from .location import Point
-import requests, json
+import googlemaps.places
 import psycopg
 from dataclasses import dataclass
 
@@ -16,7 +16,7 @@ def get_recommendations():
     Inputs (given as URL params):
         - `q`: the category of recommendations to search (e.g., "restaurants")
         - `lat`, `lon`: the user's coordinates, in degrees
-        - `rad` (optional): the search radius, in miles (defaults to 10)
+        - `rad` (optional): the search radius, in miles (defaults to 10, only a preference)
     
     Outputs a JSON array of recommendations in the following format:
         - `name`: the name of the recommendation
@@ -46,21 +46,8 @@ def get_recommendations():
             radius = float(request.args["rad"] * 1609.344)
         except ValueError:
             pass
-    res = requests.post("https://places.googleapis.com/v1/places:searchText", json={
-        "textQuery": category,
-        "locationBias": {
-            "circle": {
-                "center": {
-                    "latitude": loc.lat,
-                    "longitude": loc.lon
-                },
-                "radius": radius
-            }
-        }
-        }, headers={
-        "X-Goog-Api-Key": g.google_api_key,
-        "X-Goog-FieldMask": "places.id,places.displayName,places.types,places.formattedAddress,places.location"
-    }).json()
+    
+    res = googlemaps.places.places(g.gmaps, query=category, location=(loc.lat, loc.lon), radius=radius)
 
     @dataclass
     class Recommendation:
@@ -68,18 +55,18 @@ def get_recommendations():
         place: dict
         visits: int
     places = []
-    for c in res["places"]:
+    for c in res["results"]:
         places.append(Recommendation(len(places), c, 0))
     with g.conn.cursor() as cur:
         for c in places:
-            cur.execute("SELECT COUNT(*) FROM places WHERE id = %s;", (c.place["id"],))
+            cur.execute("SELECT COUNT(*) FROM places WHERE id = %s;", (c.place["place_id"],))
             count, = cur.fetchone()
             if (count == 0):
                 cur.execute("INSERT INTO places(id, name, address, coords) VALUES (%s, %s, %s, %s);",
-                            (c.place["id"], c.place["displayName"]["text"], c.place["formattedAddress"],
-                             Point(c.place["location"]["latitude"], c.place["location"]["longitude"])))
+                            (c.place["place_id"], c.place["name"], c.place["formatted_address"],
+                             Point(c.place["geometry"]["location"]["lat"], c.place["geometry"]["location"]["lng"])))
                 for t in c.place["types"]:
-                    cur.execute("INSERT INTO placetypes(id, type) VALUES (%s, %s);", (c.place["id"], t))
+                    cur.execute("INSERT INTO placetypes(id, type) VALUES (%s, %s);", (c.place["place_id"], t))
         cur.execute("SELECT eventid FROM attendees WHERE userid = %s;", (g.userid,))
         events = []
         for row in cur:
@@ -89,20 +76,20 @@ def get_recommendations():
         for row in cur:
             pid, visits = row
             for p in places:
-                if p.place["id"] == pid:
+                if p.place["place_id"] == pid:
                     p.visits = visits
                     break
         places.sort(key=lambda x: x.visits + x.index)
         ret = []
         for p in places:
             ret.append({
-                "name": p.place["displayName"]["text"],
-                "address": p.place["formattedAddress"],
+                "name": p.place["name"],
+                "address": p.place["formatted_address"],
                 "location": {
-                    "lat": p.place["location"]["latitude"],
-                    "lon": p.place["location"]["longitude"]
+                    "lat": p.place["geometry"]["location"]["lat"],
+                    "lon": p.place["geometry"]["location"]["lng"]
                 },
-                "distance": loc.distanceto(Point(p.place["location"]["latitude"], p.place["location"]["longitude"])).miles
+                "distance": loc.distanceto(Point(p.place["geometry"]["location"]["lat"], p.place["geometry"]["location"]["lng"])).miles
             })
         return ret
         

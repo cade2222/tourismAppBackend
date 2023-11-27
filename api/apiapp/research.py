@@ -62,17 +62,17 @@ def get_places(events: list[dict[str, Any]], placetype: str | None, placelocatio
     with g.conn.cursor() as cur:
         places = []
         cur.execute("SELECT places.id, places.name, places.coords FROM (locations JOIN places ON locations.placeid = places.id) WHERE locations.eventid = ANY(%s);", (list(map(lambda x: x["id"], events)),))
-        for row in cur:
+        result = cur.fetchall()
+        for row in result:
             pid, pname, ploc = row
             assert isinstance(ploc, Point)
             if placelocation is not None and placelocation[0].distanceto(ploc).miles > placelocation[1]:
                 continue
-            if placetype is not None:
-                cur.execute("SELECT COUNT(*) FROM placetypes WHERE id = %s AND type = %s", (pid, placetype))
-                count, = cur.fetchone()
-                if count == 0:
-                    continue
-            places.append({"id": pid, "name": pname, "coords": {"lat": ploc.lat, "lon": ploc.lon}})
+            cur.execute("SELECT type FROM placetypes WHERE id = %s;", (pid,))
+            types = [i[0] for i in cur.fetchall()]
+            if placetype is not None and placetype not in types:
+                continue
+            places.append({"id": pid, "name": pname, "coords": {"lat": ploc.lat, "lon": ploc.lon}, "types": types})
         return places
 
 def get_location_data(events: list[dict[str, Any]], places: list[dict[str, Any]]):
@@ -112,6 +112,7 @@ def get_research_info():
             - `name`: the place's name
             - `coords`: the place's location, in the following format:
                 - `lat`, `lon`: the latitude and longitude of the place, in degrees
+            - `types`: a list of the place's types
         - `visits`: the number of times people in a given event visited a given place
             - indexed first on event ID, then on place ID (i.e., access `visits[eventid][placeid]`)
             - only includes the events and places listed in `events` and `places`

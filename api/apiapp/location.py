@@ -81,8 +81,8 @@ def get_place_info(placeid: str) -> tuple[str | None, str, Point] | None:
 @bp.before_app_request
 def get_google_api_key():
     with open(request.environ["GOOGLE_API_KEY_PATH"]) as file:
-        g.google_api_key = file.read().strip()
-        g.gmaps = googlemaps.Client(key=g.google_api_key)
+        google_api_key = file.read()
+        g.gmaps = googlemaps.Client(key=google_api_key)
 
 def visit_location(location: Point, eventid: int) -> Response:
     assert isinstance(g.conn, psycopg.Connection)
