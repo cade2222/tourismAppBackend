@@ -15,14 +15,21 @@
 <button onclick="getEvents()">Get Events</button>
 
 <div id="filter-container">
-  <label for="category">Filter by Event:</label>
-  <select id="category" onchange="filterContent()">
-      <option value="all">All</option>
-      <!-- Events will be dynamically added here -->
-  </select>
+    <label for="category">Filter by Event:</label>
+    <select id="category" onchange="filterContent()">
+        <option value="all">All Events</option>
+        <!-- Events will be dynamically added here -->
+    </select>
 
-  <!-- Search Bar -->
-  <input type="text" id="search" placeholder="Search..." oninput="filterContent()">
+    <!-- Add the new dropdown for placetypes -->
+    <label for="placetype">Filter by Place Type:</label>
+    <select id="placetype" onchange="filterContent()">
+        <option value="all">All Placetypes</option>
+        <!-- Placetypes will be dynamically added here -->
+    </select>
+
+    <!-- Search Bar -->
+    <input type="text" id="search" placeholder="Search for keywords..." oninput="filterContent()">
 </div>
 
 <table id="dataTable">
@@ -30,15 +37,14 @@
         <tr>
             <th>Events</th>
             <th>Places</th>
-            <th>Visits</th>
             <th>Place Type</th>
+            <th>Visits</th>          
         </tr>
     </thead>
     <tbody id="dataBody">
     </tbody>
 </table>
 
-<script src="script.js"></script>
 <script src="api.js"></script>
 
 </body>
