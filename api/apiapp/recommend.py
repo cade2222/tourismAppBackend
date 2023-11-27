@@ -43,7 +43,7 @@ def get_recommendations():
     radius = 16093.44
     if "rad" in request.args:
         try:
-            radius = float(request.args["rad"] * 1609.344)
+            radius = float(request.args["rad"]) * 1609.344
         except ValueError:
             pass
     
