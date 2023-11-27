@@ -178,10 +178,15 @@ def is_verified() -> bool:
 def login() -> Response:
     """
     Returns a 200 status code if the given HTTP authorization is valid, or 401 if not.
-    Response body is a JSON object with one field:
-        - `verified`: true if the user account is verified, false otherwise.
+    Response body is a JSON object with two fields:
+        - `id`: the user's ID
+        - `displayname`: the user's display name, or `null` if none is set
     """
-    return {"id": g.userid, "verified": is_verified()}
+    assert isinstance(g.conn, psycopg.Connection)
+    with g.conn.cursor() as cur:
+        cur.execute("SELECT displayname FROM users WHERE id = %s;", (g.userid,))
+        dname, = cur.fetchone()
+        return {"id": g.userid, "displayname": dname}
 
 
 def verify_email(code: int, email: str, **kwargs) -> Response:
