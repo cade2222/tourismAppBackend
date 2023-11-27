@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+  <title>Filter Website</title>
+</head>
+<body>
+
+<!-- Filter Container -->
+<div id="filter-container">
+  <label for="category">Filter by Category:</label>
+  <select id="category" onchange="filterContent()">
+    <option value="all">All</option>
+    <option value="category1">Category 1</option>
+    <option value="category2">Category 2</option>
+    <option value="category3">Category 3</option>
+  </select>
+
+  <!-- Search Bar -->
+  <input type="text" id="search" placeholder="Search..." oninput="filterContent()">
+</div>
+
+<!-- Content Items -->
+<div class="content-item category1">Content item 1 (Category 1)</div>
+<div class="content-item category2">Content item 2 (Category 2)</div>
+<div class="content-item category3">Content item 3 (Category 3)</div>
+<div class="content-item category1">Content item 4 (Category 1)</div>
+<div class="content-item category2">Content item 5 (Category 2)</div>
+<div class="content-item category3">Content item 6 (Category 3)</div>
+
+<button onclick="getEvents()">Get Place Types</button>
+
+<script src="script.js"></script>
+<script src="api.js"></script>
+</body>
+</html>
+
+
+button onclick="getEvents()">Get Place Types</button>
