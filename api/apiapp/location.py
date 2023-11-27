@@ -40,7 +40,7 @@ class Point:
                 count, = cur.fetchone()
                 if count == 0:
                     name = googlemaps.places.place(client=g.gmaps, place_id=id, fields=["name"])["result"]["name"]
-                    cur.execute("INSERT INTO places(id, name, address, coords) VALUES (%s, %s, %s);", (id, name, addr, loc))
+                    cur.execute("INSERT INTO places(id, name, address, coords) VALUES (%s, %s, %s, %s);", (id, name, addr, loc))
                     for t in i["types"]:
                         cur.execute("INSERT INTO placetypes(id, type) VALUES (%s, %s);", (id, t))
                 cur.execute("SELECT name FROM places WHERE id = %s;", (id,))
