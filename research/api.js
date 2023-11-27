@@ -24,21 +24,30 @@ async function submitForm() {
     
 }
 
-// New function to populate the event dropdown
-function populateEventDropdown(events) {
-  // Get the dropdown element
-  let eventDropdown = document.getElementById("category");
+// New function to fetch events, places, and visits and populate the table
+async function getEvents() {
+  let headersList = {
+      "Accept": "*/*",
+      "User-Agent": "Thunder Client (https://www.thunderclient.com)",
+      "Authorization": "Basic ZXhhbXBsZTpQYXNzd2QxMjMh"
+  }
 
-  // Clear existing options
-  eventDropdown.innerHTML = '<option value="all">All Events</option>';
-
-  // Populate the dropdown with events
-  events.forEach(event => {
-      let option = document.createElement("option");
-      option.value = event.displayname;
-      option.text = event.displayname;
-      eventDropdown.add(option);
+  let response = await fetch("https://api.explorecityapp.com/research", {
+      method: "GET",
+      headers: headersList
   });
+
+  let data = await response.json();
+  console.log(data);
+
+  // Populate the event dropdown
+  populateEventDropdown(data.events);
+
+  // Call the getPlacetypes function to populate the placetype dropdown
+  await getPlacetypes();
+
+  // Populate the table based on the selected event and placetype
+  populateTable(data.events, data.places, data.visits);
 }
 
 // New function to populate the placetype dropdown
@@ -71,7 +80,23 @@ async function getPlacetypes() {
   });
 }
 
-// Function to populate the table based on the selected event and placetype
+// New function to populate the event dropdown
+function populateEventDropdown(events) {
+  // Get the dropdown element
+  let eventDropdown = document.getElementById("category");
+
+  // Clear existing options
+  eventDropdown.innerHTML = '<option value="all">All Events</option>';
+
+  // Populate the dropdown with events
+  events.forEach(event => {
+      let option = document.createElement("option");
+      option.value = event.displayname;
+      option.text = event.displayname;
+      eventDropdown.add(option);
+  });
+}
+
 function populateTable(events, places, visits) {
   let selectedEvent = document.getElementById("category").value;
   let selectedPlacetype = document.getElementById("placetype").value;
@@ -80,67 +105,52 @@ function populateTable(events, places, visits) {
   let dataBody = document.getElementById("dataBody");
   dataBody.innerHTML = '';
 
+  // Use a set to keep track of unique combinations of event and place
+  let uniqueCombinations = new Set();
+
   // Iterate through events
   for (let event of events) {
-      // Check if the event matches the selected event
-      if (selectedEvent === "all" || selectedEvent === event.id) {
-          // Iterate through places
-          for (let place of places) {
-              // Check if the place matches the selected placetype
-              if (selectedPlacetype === "all" || place.types.includes(selectedPlacetype)) {
-                  // Create a row for each event and place combination
-                  let row = dataBody.insertRow();
-                  let cellEvent = row.insertCell(0);
-                  let cellPlace = row.insertCell(1);
-                  let cellPlaceType = row.insertCell(2);
-                  let cellVisit = row.insertCell(3);
+    // Check if the event matches the selected event
+    if (selectedEvent === "all" || selectedEvent === event.id) {
+      // Filter places based on the selected placetype
+      let filteredPlaces = places.filter(place => selectedPlacetype === "all" || place.types.includes(selectedPlacetype));
 
-                  // Update cells with event-specific data
-                  cellEvent.innerText = event.displayname;
-                  cellPlace.innerText = place.name;
+      // Iterate through filtered places
+      for (let place of filteredPlaces) {
+        // Create a unique key for the combination of event and place
+        let combinationKey = `${event.id}-${place.id}`;
 
-                  // Check if there are visits for the current place in the current event
-                  if (visits[event.id] && visits[event.id][place.id]) {
-                      cellVisit.innerText = visits[event.id][place.id];
-                  } else {
-                      // If no visits for the current place, indicate 0 visits
-                      cellVisit.innerText = '0';
-                  }
+        // Check if the combination has already been added to the set
+        if (!uniqueCombinations.has(combinationKey)) {
+          // Create a row for each unique combination
+          let row = dataBody.insertRow();
+          let cellEvent = row.insertCell(0);
+          let cellPlace = row.insertCell(1);
+          let cellPlaceType = row.insertCell(2);
+          let cellVisit = row.insertCell(3);
 
-                  // Update cellPlaceType with types information
-                  cellPlaceType.innerText = place.types.join(', '); // Join types with a comma and space
-              }
+          // Update cells with event-specific data
+          cellEvent.innerText = event.displayname;
+          cellPlace.innerText = place.name;
+
+          // Check if there are visits for the current place in the current event
+          if (visits[event.id] && visits[event.id][place.id]) {
+            cellVisit.innerText = visits[event.id][place.id];
+          } else {
+            // If no visits for the current place, indicate 0 visits
+            cellVisit.innerText = '0';
           }
+
+          // Update cellPlaceType with types information
+          cellPlaceType.innerText = place.types.join(', '); // Join types with a comma and space
+
+          // Add the combination to the set to mark it as processed
+          uniqueCombinations.add(combinationKey);
+        }
       }
+    }
   }
 }
-
-// New function to fetch events, places, and visits and populate the table
-async function getEvents() {
-  let headersList = {
-      "Accept": "*/*",
-      "User-Agent": "Thunder Client (https://www.thunderclient.com)",
-      "Authorization": "Basic ZXhhbXBsZTpQYXNzd2QxMjMh"
-  }
-
-  let response = await fetch("https://api.explorecityapp.com/research", {
-      method: "GET",
-      headers: headersList
-  });
-
-  let data = await response.json();
-  console.log(data);
-
-  // Populate the event dropdown
-  populateEventDropdown(data.events);
-
-  // Call the getPlacetypes function to populate the placetype dropdown
-  await getPlacetypes();
-
-  // Populate the table based on the selected event and placetype
-  populateTable(data.events, data.places, data.visits);
-}
-
 
 function filterContent() {
     var selectedCategory = document.getElementById("category").value.toLowerCase();
