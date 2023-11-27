@@ -10,6 +10,21 @@ bp = Blueprint("recommend", __name__, url_prefix="/recommend")
 @bp.route("", methods=["GET"])
 @authenticate
 def get_recommendations():
+    """
+    Gets a list of recommendations based on a user's location and search query.
+
+    Inputs (given as URL params):
+        - `q`: the category of recommendations to search (e.g., "restaurants")
+        - `lat`, `lon`: the user's coordinates, in degrees
+        - `rad` (optional): the search radius, in miles (defaults to 10)
+    
+    Outputs a JSON array of recommendations in the following format:
+        - `name`: the name of the recommendation
+        - `location`: the coordinates of the recommendation, as an object:
+            - `lat`, `lon`: the latitude and longitude, in degrees
+        - `address`: the address of the recommendation
+        - `distance`: the distance from the user to the recommended place, in miles
+    """
     assert isinstance(g.conn, psycopg.Connection)
     if "q" not in request.args or not request.args["q"].strip():
         abort(400)
@@ -25,10 +40,10 @@ def get_recommendations():
         loc = Point(lat, lon)
     except ValueError:
         abort(400)
-    radius = 20000.0
+    radius = 16093.44
     if "rad" in request.args:
         try:
-            radius = float(request.args["rad"] / 1609.344)
+            radius = float(request.args["rad"] * 1609.344)
         except ValueError:
             pass
     res = requests.post("https://places.googleapis.com/v1/places:searchText", json={
