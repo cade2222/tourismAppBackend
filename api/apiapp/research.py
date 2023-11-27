@@ -11,6 +11,9 @@ bp = Blueprint("research", __name__, url_prefix="/research")
 @bp.route("/placetypes", methods=["GET"])
 @authenticate
 def get_place_types():
+    """
+    Returns a JSON list of possible place types.
+    """
     assert isinstance(g.conn, psycopg.Connection)
     with g.conn.cursor() as cur:
         types = []
@@ -88,6 +91,31 @@ def get_location_data(events: list[dict[str, Any]], places: list[dict[str, Any]]
 @bp.route("", methods=["GET"])
 @authenticate
 def get_research_info():
+    """
+    Returns collected location data for a given event or set of events.
+
+    Inputs (given as URL parameters, all optional):
+        - `eventid`: the ID of the event, if only one is being examined
+        - `start`: the earliest date for which to accept events
+        - `end`: the latest date for which to accept events
+        - `eventquery`: a query on which to limit events (must not be empty)
+        - `eventlat`, `eventlon`, `eventrad`: the coordinates and maximum search radius on which to restrict events
+        - `placetype`: limit places by type (to get a list of available types, query "/research/placetypes")
+        - `placelat`, `placelon`, `placerad`: the coordinates and maximum search radius on which to restrict places
+    
+    Outputs a JSON object:
+        - `events`: a list of returned events in the following format:
+            - `id`: the event's ID
+            - `displayname`: the event's name
+        - `places`: a list of returned places in the following format:
+            - `id`: the place's ID
+            - `name`: the place's name
+            - `coords`: the place's location, in the following format:
+                - `lat`, `lon`: the latitude and longitude of the place, in degrees
+        - `visits`: the number of times people in a given event visited a given place
+            - indexed first on event ID, then on place ID (i.e., access `visits[eventid][placeid]`)
+            - only includes the events and places listed in `events` and `places`
+    """
     startdate = enddate = eventid = eventlocation = placelocation = None
     try:
         if "start" in request.args:
