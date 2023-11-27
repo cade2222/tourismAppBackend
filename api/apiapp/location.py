@@ -47,7 +47,7 @@ class Point:
                 name, = cur.fetchone()
                 cur.execute("SELECT type FROM placetypes WHERE id = %s;", (id,))
                 types = [i[0] for i in cur.fetchall()]
-                places.append(Place(id, name, types))
+                places.append(Place(id, name, addr, types))
         return places
 
 def get_place_info(placeid: str) -> tuple[str | None, str, Point] | None:
