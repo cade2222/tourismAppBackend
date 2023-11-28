@@ -16,7 +16,7 @@ def authenticate(func):
     def inner(*args, **kwargs):
         if request.authorization is None or request.authorization.type != "basic":
             abort(401)
-        username = request.authorization.parameters["username"]
+        username = request.authorization.parameters["username"].lower()
         password = request.authorization.parameters["password"]
         
         assert isinstance(g.conn, psycopg.Connection)
@@ -155,23 +155,8 @@ def register() -> Response:
         return (errors, 422)
 
     id = create_user(**request.json)
-    send_verification_email(**request.json)
+    #send_verification_email(**request.json)
     return {"id": id}
-
-
-def is_verified() -> bool:
-    """
-    Determines if the logged-in user has a verified email.
-
-    Returns true if the account is verified, false otherwise.
-    """
-    assert isinstance(g.conn, psycopg.Connection)
-    assert isinstance(g.userid, int)
-    verified = False
-    with g.conn.cursor() as cur:
-        cur.execute("SELECT id FROM users WHERE id = %s AND verification IS NULL;", (g.userid,))
-        verified = cur.rowcount != 0
-    return verified
 
 @bp.route("", methods=["GET"])
 @authenticate
