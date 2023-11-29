@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <title>Data Display</title>
+</head>
+<body>
+
+<!-- ExploreCity Researcher Portal -->
+<h1>ExploreCity Researcher Portal</h1>
+
+<button onclick="getEvents()">Get Events</button>
+
+<div id="filter-container">
+    <label for="category">Filter by Event:</label>
+    <select id="category" onchange="filterContent()">
+        <option value="all">All Events</option>
+        <!-- Events will be dynamically added here -->
+    </select>
+
+    <!-- Add the new dropdown for placetypes -->
+    <label for="placetype">Filter by Place Type:</label>
+    <select id="placetype" onchange="filterContent()">
+        <option value="all">All Placetypes</option>
+        <!-- Placetypes will be dynamically added here -->
+    </select>
+
+    <!-- Search Bar -->
+    <input type="text" id="search" placeholder="Search for keywords..." oninput="filterContent()">
+</div>
+
+<table id="dataTable">
+    <thead>
+        <tr>
+            <th>City</th> 
+            <th>Events</th>
+            <th>Places</th>
+            <th>Place Type</th>          
+            <th>Visits</th>
+        </tr>
+    </thead>
+    <tbody id="dataBody">
+    </tbody>
+</table>
+<script src="api.js"></script>
+
+</body>
+</html>
