@@ -18,8 +18,12 @@ async function submitForm() {
      let data = await response.text();
      console.log(data);
            
-    window.location.href = "howdy.html";  
+    window.location.href = "data.html";  
 }
+
+let places;
+let visits;
+let events; 
 
 // New function to fetch events, places, and visits and populate the table
 async function getEvents() {
@@ -37,6 +41,12 @@ async function getEvents() {
   let data = await response.json();
   console.log(data);
 
+  places = data.places;
+  visits = data.visits;
+  events = data.events;
+  // console.log(places);
+  // console.log(visits);
+
   // Populate the event dropdown
   populateEventDropdown(data.events);
 
@@ -46,6 +56,8 @@ async function getEvents() {
   // Populate the table based on the selected event and placetype
   populateTable(data.events, data.places, data.visits);
 }
+
+let placetype;
 
 // New function to populate the placetype dropdown
 async function getPlacetypes() {
@@ -61,6 +73,7 @@ async function getPlacetypes() {
   });
 
   let data = await response.json();
+  placetype = data
 
   // Get the dropdown element
   let placetypeDropdown = document.getElementById("placetype");
@@ -83,10 +96,10 @@ async function getCityFromPlaceId(placeId) {
 
   try {
     const response = await fetch(apiUrl);
-    const data = await response.json();
+    const dat = await response.json();
 
     if (data.status === 'OK') {
-      const addressComponents = data.result.address_components;
+      const addressComponents = dat.result.address_components;
       const cityComponent = addressComponents.find(component =>
         component.types.includes('locality')
       );
@@ -97,7 +110,7 @@ async function getCityFromPlaceId(placeId) {
         throw new Error('City not found in address components.');
       }
     } else {
-      throw new Error(`Error in API response: ${data.status}`);
+      throw new Error(`Error in API response: ${dat.status}`);
     }
   } catch (error) {
     console.error('Error fetching city:', error.message);
@@ -173,7 +186,8 @@ async function populateTable(events, places, visits) {
                   let cellPlaceType = row.insertCell(3);
                   let cellVisit = row.insertCell(4);
 
-                  // Update cells with event-specific data                  
+                  // Update cells with event-specific data
+                  // console.log(place.id)              
                   // cellCity.innerText = await getCityFromPlaceId(place.id);                  
                   // console.log(cellCity.innerText)
                   cellEvent.innerText = event.displayname;
@@ -225,4 +239,173 @@ function filterContent() {
     // Show or hide the row based on filter conditions
     dataRow.style.display = categoryMatch && placetypeMatch && searchMatch ? "" : "none";
   }
+}
+
+
+function generateBarGraph() {
+  // Get the selected event
+  let selectedEventName = document.getElementById("category").value;
+  let selectedEvent = events.find(event => event.displayname === selectedEventName);
+  console.log(selectedEvent.id)
+
+  // Filter visits for the selected event
+  let filteredVisits = visits[selectedEvent.id];
+
+  const placeTypesAndVisits = {};
+
+  placetype.forEach(function(key) {
+        placeTypesAndVisits[key] = 0;
+  });
+
+  for (const visitKey in visits) {
+    const visitData = visits[visitKey];
+      
+    // Iterate through the inner object of visitData
+    for (const placeId in visitData) {
+
+      const matchingPlace = places.find(place => place.id === placeId).types;
+      console.log(matchingPlace)
+
+      if (matchingPlace) {
+        matchingPlace.forEach(placeType => {
+          console.log(placeType)
+          if (placeTypesAndVisits.hasOwnProperty(placeType)) {
+            placeTypesAndVisits[placeType] += visitData[placeId] || 0;
+          }
+        });
+      }      
+    }
+  }
+  
+  
+  // Print the result
+  console.log(placeTypesAndVisits);
+  
+// Sort the place types based on visit counts in descending order
+const sortedPlaceTypes = Object.keys(placeTypesAndVisits).sort((a, b) => placeTypesAndVisits[b] - placeTypesAndVisits[a]);
+
+// Extract the labels and data for the bar graph
+const labels = sortedPlaceTypes;
+const dataValues = sortedPlaceTypes.map(placeType => placeTypesAndVisits[placeType]);
+
+// Create a new window and open an HTML document
+const newWindow = window.open('', '_blank');
+newWindow.document.write('<html><head><title>' + selectedEventName + ' Bar Graph</title></head><body>');
+
+// Add a canvas element for the chart
+newWindow.document.write('<canvas id="barGraph" width="400" height="400"></canvas>');
+
+// Add the Chart.js library (make sure to include the library in your project)
+newWindow.document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>');
+
+// Add a script to generate the chart in the new window
+newWindow.document.write('<script>');
+newWindow.document.write(`
+  var ctx = document.getElementById('barGraph').getContext('2d');
+  var myBarChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ${JSON.stringify(labels)},
+      datasets: [{
+        label: 'Visits',
+        data: ${JSON.stringify(dataValues)},
+        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+        borderColor: 'rgba(75, 192, 192, 1)',
+        borderWidth: 1
+      }]
+    },
+    options: {
+      scales: {
+        y: {
+          beginAtZero: true
+        }
+      }
+    }
+  });
+`);
+newWindow.document.write('</script>');
+
+newWindow.document.write('</body></html>');
+
+// Make sure to close the document stream
+newWindow.document.close();
+}
+
+
+
+function generatePieChart() {
+  // Get the selected event
+  let selectedEventName = document.getElementById("category").value;
+  let selectedEvent = events.find(event => event.displayname === selectedEventName);
+
+  // Filter visits for the selected event
+  let filteredVisits = visits[selectedEvent.id];
+
+  // Create a new object to store counts for the selected event
+  const placeTypesAndVisits = {};
+
+  // Initialize counts for each place type to 0
+  placetype.forEach(function (key) {
+      placeTypesAndVisits[key] = 0;
+  });
+
+  // Update the dictionary based on the visits data for the selected event
+  for (const visitKey in filteredVisits) {
+      const visitCount = filteredVisits[visitKey];
+      const matchingPlace = places.find(place => place.id === visitKey);
+
+      if (matchingPlace && matchingPlace.types) {
+          matchingPlace.types.forEach(placeType => {
+              if (placeTypesAndVisits.hasOwnProperty(placeType)) {
+                  placeTypesAndVisits[placeType] += visitCount || 0;
+              }
+          });
+      }
+  }
+
+  // Extract the labels and data for the pie chart
+  const labels = Object.keys(placeTypesAndVisits);
+  const dataValues = Object.values(placeTypesAndVisits);
+
+  // Create a new window and open an HTML document
+  const newWindow = window.open('', '_blank');
+  newWindow.document.write('<html><head><title>' + selectedEventName + ' Pie Chart</title></head><body>');
+
+  // Add a canvas element for the chart
+  newWindow.document.write('<canvas id="pieChart" width="400" height="400"></canvas>');
+
+  // Add the Chart.js library (make sure to include the library in your project)
+  newWindow.document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>');
+
+  // Add a script to generate the chart in the new window
+  newWindow.document.write('<script>');
+  newWindow.document.write(`
+      var ctx = document.getElementById('pieChart').getContext('2d');
+      var myPieChart = new Chart(ctx, {
+          type: 'pie',
+          data: {
+              labels: ${JSON.stringify(labels)},
+              datasets: [{
+                  data: ${JSON.stringify(dataValues)},
+                  backgroundColor: [
+                      'rgba(255, 99, 132, 0.8)',
+                      'rgba(54, 162, 235, 0.8)',
+                      'rgba(255, 206, 86, 0.8)',
+                      'rgba(75, 192, 192, 0.8)',
+                      'rgba(153, 102, 255, 0.8)',
+                      'rgba(255, 159, 64, 0.8)'
+                  ],
+              }]
+          },
+          options: {
+              // Your options here
+          }
+      });
+  `);
+  newWindow.document.write('</script>');
+
+  newWindow.document.write('</body></html>');
+
+  // Make sure to close the document stream
+  newWindow.document.close();
 }
